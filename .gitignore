@@ -1,0 +1,52 @@
+web/node_modules/
+node_modules/
+tests/report_*.html
+web/tests/report*.html
+web/tests/node_modules/
+web/server.log
+web/logs/
+web/nul
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+# web/public/img/ — все изображения веб-интерфейса (фоны, иконки, UI-элементы)
+# комититься и пушиться на гит как часть UI, а не личный арт города/персонажей.
+!web/public/img/
+!web/public/img/**
+
+# Звуковая библиотека (саундборд) — общая для всех городов, но каждый
+# пользователь собирает свою локально: не коммитим ни файлы, ни манифест
+# (см. docs/superpowers/specs/2026-07-10-audio-library-design.md).
+cities/audio/
+
+.claude/settings.local.json
+Thumbs.db
+desktop.ini
+
+# Local secrets
+web/.env
+web/.gemini-vertex-key.json
+# Директория-паттерн (не имя файла) — защищает ЛЮБОЙ файл отката настроек
+# (Инструменты → Бэкап → восстановление), не только .env/.gemini-vertex-key.json
+# в их текущих именах выше.
+web/.backups/
+
+# Local proxy tool (binary, not committed)
+TgWsProxy_windows.exe
+TgWsProxy_windows_arm64.exe
+TgWsProxy_data/
+
+# Личный персонаж для внешней хроники — не индексировать
+/Демиан Лорей.md
+**/.impeccable/
+
+# Локальный ChromeDriver для web/tests/run-ui.bat + кэш Selenium Manager —
+# бинарник платформозависимый и тяжёлый (~40MB), в репозиторий не кладём.
+web/tests/bin/
+web/se-metadata.json
+
+# Миниатюры арта — производные файлы, генерируются сервером при первом показе
+# (web/lib/thumbs.js). В репозиторий не кладём.
+cities/*/.thumbs/

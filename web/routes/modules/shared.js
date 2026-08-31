@@ -1,0 +1,863 @@
+'use strict';
+// Общие хелперы для web/routes/modules/* — разбито из monolithic modules.js
+// (2543 строк, 30 роутов) на домены: list/fill/scenario/sessions/fields/npc/
+// lifecycle/locations, каждый требует отсюда нужный ему набор хелперов.
+
+const path    = require('path');
+const fs      = require('fs').promises;
+const { serverError, aiRateLimit, _logAiCall, _logAiFail } = require('../../lib/http');
+const {
+  ROOT, cityDir, charsDir, locsDir, chroniclesDir, archiveDir,
+  reqCity, writeFileAtomic, invalidateChars,
+  getAllCharacters, getAllLocations, listModules, tableCell, LINEAGE_MAP,
+  _nameMatch, rmdir, getChronicleDisplay,
+} = require('../../lib/db');
+const { slugify, parseEvent, parseScenarioSections, replaceScenarioSection, replaceScenarioSections, splitH3Body, serializeScenarioSections, findScenarioSectionIndex, checkScenarioStructure, insertScenarioScene, hasManualSceneMarker, clearManualSceneMarker, isFinaleHeading, sanitizeInlineText, escapeTableCell, unescapeTableCell, sanitizeFreeformBody, unescapeFreeformBody } = require('../../lib/parsers');
+
+// Modules now live under chronicles/<chr>/modules/<mod>/ — flatten them with their chronicle.
+const MOD_AUX = n => ['npc.md', 'scenario.md', 'finale.md'].includes(n) || n.endsWith('-sheet.md');
+
+// Rebuild modules section in chronicle.md from current modules/ dir
+async function syncChronicleModuleLinks(city, chr) {
+  const chrDir = path.join(chroniclesDir(city), chr);
+  const chrMdPath = path.join(chrDir, 'chronicle.md');
+  const raw = await fs.readFile(chrMdPath, 'utf-8').catch(() => null);
+  if (!raw) return; // no chronicle.md (older chronicle)
+
+  // Read current modules
+  let mEntries; try { mEntries = await fs.readdir(path.join(chrDir, 'modules'), { withFileTypes: true }); } catch { mEntries = []; }
+  const mods = mEntries
+    .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+    .map(e => {
+      // Try to read title from main md file
+      let title = e.name;
+      try {
+        const mainTxt = require('fs').readFileSync(path.join(chrDir, 'modules', e.name, `${e.name}.md`), 'utf-8');
+        const hm = mainTxt.match(/^#\s+(.+)$/m);
+        if (hm) title = hm[1].replace(/[*[\]]/g, '').trim();
+      } catch {}
+      return { slug: e.name, title };
+    });
+
+  // Replace or add ## 🔗 Модули section
+  const modsSection = mods.length
+    ? `\n## 🔗 Модули\n\n${mods.map(m => `- [${m.title}](modules/${m.slug}/${m.slug}.md)`).join('\n')}\n`
+    : '';
+
+  let updated;
+  if (/^## 🔗 Модули/m.test(raw)) {
+    // Replace existing section
+    // Two alternatives, not one lookahead with \s*$: a lazy [\s\S]*? stops as soon as
+    // the lookahead can match, and \s*$ matches zero-width right after the section's
+    // own content (before its trailing \n) just as readily as at the true end of
+    // string — so the trailing \n is never consumed and is left behind on every call,
+    // growing by one blank line per sync (FIX: code review 2026-08-11). When another
+    // section follows, cut lazily right before it (unchanged); when the module section
+    // is the last thing in the file, consume greedily to the true end instead.
+    updated = raw.replace(/\n## 🔗 Модули[\s\S]*?(?=\n## |\n---)|\n## 🔗 Модули[\s\S]*$/, modsSection);
+  } else {
+    updated = raw.trimEnd() + '\n' + modsSection;
+  }
+
+  if (updated !== raw) await writeFileAtomic(chrMdPath, updated, 'utf-8');
+}
+
+// Build preview of what delete would do
+// Resolve city display name from city.md H1.
+// FIX-11 (docs/audit/2026-07-28-fix-plan.md): this used to rebuild the path by
+// hand as path.join(__dirname, '..', 'cities', ...) — __dirname is
+// web/routes/modules/, so that resolved to the nonexistent web/routes/cities/
+// (one level short of the real cities/ at the project root) and ALWAYS hit the
+// catch, silently falling back to the raw city slug for every module NPC ever
+// created. cityDir() is the single source of truth for this path elsewhere.
+async function getCityDisplayName(city) {
+  try {
+    const txt = await fs.readFile(path.join(cityDir(city), 'city.md'), 'utf-8');
+    const m = txt.match(/^#\s+(.+)$/m);
+    return m ? m[1].trim() : city;
+  } catch { return city; }
+}
+
+// FIX-17 (docs/audit/2026-07-28-fix-plan.md): full audit of web/routes/modules/*.js
+// found 16 of 35 routes taking a client path-segment (:chr/:mod/:slug/...) and
+// using it in path.join(...) with no check for '..' at all — some only leak
+// reads, but DELETE /api/chronicles/:chr/modules/:mod (lifecycle.js) recursively
+// rm's whatever directory the traversal resolves to, and the NPC-promote route
+// below writes to a caller-controlled destination. One shared predicate instead
+// of copy-pasting `x.includes('..')` chains at each of the 16 call sites.
+function _hasTraversal(...segments) {
+  return segments.some(s => typeof s === 'string' && s.includes('..'));
+}
+
+// ── Module NPC sheets (episodic NPCs: chronicles/<chr>/modules/<mod>/npc/<slug>/) ──
+// Returns null on a traversal attempt in any segment — every caller must check
+// for that before using the paths (FIX-17 above; this used to build the path
+// unconditionally, so every route calling it inherited the same hole).
+function _npcSheetPaths(city, chr, mod, slug) {
+  if (_hasTraversal(chr, mod, slug)) return null;
+  const dir = path.join(chroniclesDir(city), chr, 'modules', mod, 'npc', slug);
+  return { dir, card: path.join(dir, `${slug}.md`), sheet: path.join(dir, `${slug}-sheet.md`) };
+}
+
+// ── NPC promotion: episodic → canonical character ─────────────────────────────
+
+// Check the three promotion conditions for a modular NPC.
+// Returns { survived, inFinale, inMultipleModules }.
+async function _checkNpcPromotion(city, chr, mod, npcSlug) {
+  const modDir  = path.join(chroniclesDir(city), chr, 'modules', mod);
+  const npcCard = path.join(modDir, 'npc', npcSlug, `${npcSlug}.md`);
+
+  // 1. Survived — status in the modular NPC card is not dead/destroyed
+  let survived = false;
+  try {
+    const card = await fs.readFile(npcCard, 'utf-8');
+    const sl   = (card.match(/\*\*Статус\*\*[^|\n]*\|\s*([^|\n]+)\|/)?.[1] || '').toLowerCase();
+    survived   = !/(мёртв|мертв|уничтожен|погиб|убит|final death)/i.test(sl);
+  } catch { survived = false; }
+
+  // 2. Mentioned in finale.md of this module
+  let inFinale = false;
+  try {
+    const finale = await fs.readFile(path.join(modDir, 'finale.md'), 'utf-8');
+    inFinale = finale.toLowerCase().includes(npcSlug.replace(/-/g, ' '));
+    if (!inFinale) {
+      // Also match slug directly (dashes kept)
+      inFinale = finale.toLowerCase().includes(npcSlug);
+    }
+    if (!inFinale) {
+      // Try matching the name from the card
+      const nameM = (await fs.readFile(npcCard, 'utf-8').catch(() => ''))
+        .match(/^#{1,3}\s+[^\p{L}]*(.+?)(?:\s*[—–].*)?$/mu);
+      if (nameM) inFinale = finale.toLowerCase().includes(nameM[1].trim().toLowerCase());
+    }
+  } catch { inFinale = false; }
+
+  // 3. Appears in 2+ modules (count all modules across all chronicles that have this slug in npc/)
+  let moduleCount = 0;
+  try {
+    const chrs = await fs.readdir(chroniclesDir(city), { withFileTypes: true });
+    for (const cEntry of chrs) {
+      if (!cEntry.isDirectory()) continue;
+      const mods = await fs.readdir(path.join(chroniclesDir(city), cEntry.name, 'modules'), { withFileTypes: true }).catch(() => []);
+      for (const mEntry of mods) {
+        if (!mEntry.isDirectory()) continue;
+        const exists = await fs.stat(
+          path.join(chroniclesDir(city), cEntry.name, 'modules', mEntry.name, 'npc', npcSlug)
+        ).catch(() => null);
+        if (exists) moduleCount++;
+      }
+    }
+  } catch { moduleCount = 1; }
+  const inMultipleModules = moduleCount >= 2;
+
+  return { survived, inFinale, inMultipleModules };
+}
+
+// Extract location names from generated scenario text (no AI call needed).
+// Looks for "### Name" headers inside the "Локации" section, falling back to
+// bold list items. Returns up to `max` names.
+// Clean a raw scenario location heading into a bare place name
+// e.g. "1. Станция Марселье (Line 13) — 23:47" → "Станция Марселье"
+function _cleanLocName(raw) {
+  return String(raw)
+    .replace(/[*_`[\]]/g, '')
+    .split(/\s+[—–]\s+/)[0]        // "Name — time/desc" → "Name"
+    .replace(/\([^)]*\)/g, ' ')    // drop "(Line 13)"
+    .replace(/^[\s\d.)]+/, '')     // drop leading "1. " numbering
+    .replace(/^[^\p{L}«»"]+/u, '') // drop leading emoji/symbols
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+// Coarse location "type" — used to avoid multiplying same-type places
+// (e.g. inventing a new metro station when one already exists).
+function _locType(name) {
+  const n = String(name).toLowerCase();
+  if (/метро|métro|\bmetro\b|перрон|перон|станци/.test(n)) return 'metro';
+  if (/катакомб|подземель/.test(n))                        return 'catacombs';
+  if (/кладбищ|cimeti|погост|пер-лашез/.test(n))           return 'cemetery';
+  return null;
+}
+// Эталонный формат сценария (см. tsirk_tsirk_tsirk/scenario.md) не выделяет
+// «Локации»/«НПС» отдельными заголовками — имена вплетены в прозу GM-справки
+// и сцен. Чтобы автосоздание карточек всё равно работало надёжно, промт
+// генерации требует невидимую строку-комментарий в преамбуле файла (до
+// первого `##`, поэтому никогда не рендерится в UI — см. _renderScenarioPanel):
+//   <!-- meta:npcs: Имя1; Имя2 -->
+//   <!-- meta:locations: Название1; Название2 -->
+// Это основной путь извлечения; ниже — разбор старого «плоского» формата
+// (заголовки «Локации»/«НПС») как резерв для сценариев, сгенерированных до
+// этого изменения.
+function _extractMetaList(text, key) {
+  const m = String(text || '').match(new RegExp(`<!--\\s*meta:${key}:\\s*([^>]*?)-->`, 'i'));
+  if (!m) return null;
+  return m[1].split(';').map(s => s.trim()).filter(Boolean);
+}
+
+// Location names mentioned in the scenario — meta-комментарий, иначе legacy
+// разбор секции «Локации» (см. _parseScenarioLocations, robust, bounded)
+function _extractLocNamesFromScenario(text, max = 5) {
+  return _parseScenarioLocations(text).map(l => l.name).filter(Boolean).slice(0, max);
+}
+
+// Pull NPC names — meta-комментарий, иначе legacy разбор секции «НПС»
+function _extractNpcNamesFromScenario(text, max = 12) {
+  const meta = _extractMetaList(text, 'npcs');
+  if (meta) return meta.slice(0, max);
+
+  const secM = text.match(/(?:^|\n)#{1,4}[^\n]*НПС[^\n]*\n([\s\S]*?)(?=\n#{1,2}\s|\n---|\s*$)/i);
+  const block = secM ? secM[1] : '';
+  if (!block) return [];
+  const names = [];
+  const push = raw => {
+    let n = String(raw).replace(/[*_`[\]()«»"]/g, '').replace(/^[^\p{L}]+/u, '').trim();
+    n = n.split(/[—–:(]/)[0].trim();
+    if (n.length >= 2 && n.length <= 60 && !/^(нпс|роль|имя)$/i.test(n)
+        && !names.some(x => _nameMatch(x, n))) names.push(n);
+  };
+  for (const m of block.matchAll(/^\s*[-*•]\s*\*\*([^*\n]+?)\*\*/gm)) push(m[1]);
+  for (const m of block.matchAll(/^\s*[-*•]\s*([^—–\n*[]{2,60}?)\s*[—–]/gm)) push(m[1]);
+  for (const m of block.matchAll(/^#{2,4}\s+([^—–\n]{2,60}?)(?:\s*[—–]|$)/gm)) push(m[1]);
+  return names.slice(0, max);
+}
+// Render npc.md — ПК / Каноничные (reused) / Модульные (new)
+function _renderModuleNpcMd(modTitle, mod, pcs, canonNpcs, newNpcs, allChars) {
+  const charLink = ch => `../../../../characters/${ch.lineageFolder}/${ch.slug}/${ch.slug}.md`;
+  const pcLines = (pcs && pcs.length) ? pcs.map(nm => {
+    const ch = allChars.find(c => _nameMatch(nm, c.name));
+    return ch ? `- ${ch.name} — Персонаж игрока → 🔗 [Карточка](${charLink(ch)})`
+              : `- ${nm} — Персонаж игрока`;
+  }).join('\n') : '- —';
+  const canonLines = canonNpcs.length
+    ? canonNpcs.map(x => `- ${x.char.name} — ${x.role || 'роль в модуле'} → 🔗 [Карточка](${charLink(x.char)})`).join('\n')
+    : '- —';
+  const newLines = newNpcs.length
+    ? newNpcs.map(x => { const s = slugify(x.name); return `- ${x.name} — ${x.role || 'роль'} → 🔗 [Карточка](npc/${s}/${s}.md)`; }).join('\n')
+    : '- —';
+  return [
+    `# НПС модуля: ${modTitle}`, '',
+    `> 🔗 [Модуль](${mod}.md)`,
+    '> ℹ️ Каноничные НПС → ссылка на карточку в `characters/`. Модульные (неканоничные) → карточки в `npc/`.', '',
+    '---', '', '## 🎭 Игровые персонажи (ПК)', '', pcLines, '',
+    '---', '', '## 📚 Каноничные НПС', '', canonLines, '',
+    '---', '', '## 🆕 Модульные НПС (неканоничные)', '',
+    '> Карточки в `npc/`. Условия продвижения — `system/rules/module_rules.md`.', '', newLines, '',
+  ].join('\n');
+}
+// Compact per-character digest (status, role, date markers, relationships) for the
+// generation prompt — lets the AI reason about timeline compatibility & relations.
+function _charTimelineDigest(name, kind, card) {
+  const field = re => (card.match(re)?.[1] || '').replace(/\r/g, '').trim();
+  const status  = field(/\*\*Статус:\*\*\s*([^\n]+)/);
+  const det     = field(/\*\*Детали статуса:\*\*\s*([^\n]+)/);
+  const hier    = field(/\*\*Титул в городе:\*\*\s*([^\n]+)/) || field(/\*\*Парижская иерархия:\*\*\s*([^\n]+)/) || field(/\*\*Иерархия в городе:\*\*\s*([^\n]+)/);
+  const role    = field(/\*\*Роль:\*\*\s*([^\n]+)/);
+  const embrace = field(/\*\*Год обращения:\*\*\s*([^\n]+)/);
+  const relM    = card.match(/\*\*Отношения:\*\*\s*\n([\s\S]*?)(?=\n-\s*\*\*|\n##\s|\n---)/);
+  const rels    = relM ? relM[1].replace(/\r/g, '').replace(/\s+$/g, '') : '';
+  const dates   = [...card.matchAll(/(?:[А-Яа-яЁё]+\s+)?\b(?:19|20)\d{2}\b/g)]
+    .map(m => m[0].trim()).filter((v, i, a) => a.indexOf(v) === i).slice(0, 10);
+  const L = [`### ${name} (${kind})`];
+  if (status)        L.push(`- Статус: ${status}${det ? ` — ${det}` : ''}`);
+  if (hier || role)  L.push(`- Роль/иерархия: ${[hier, role].filter(Boolean).join(' / ')}`);
+  if (embrace && !/не указан/i.test(embrace)) L.push(`- Год обращения: ${embrace}`);
+  if (dates.length)  L.push(`- Даты в карточке: ${dates.join(', ')}`);
+  if (rels.trim())   L.push(`- Связи:\n${rels.split('\n').filter(Boolean).map(l => '  ' + l.trim()).join('\n')}`);
+  return L.join('\n');
+}
+// Return the markdown body of a scenario section whose header matches headerRe,
+// up to the next header of the same or higher level. '' if not found.
+function _extractScenarioSection(text, headerRe) {
+  if (!text) return '';
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  let start = -1, level = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const h = lines[i].match(/^(#{1,4})\s+(.+)$/);
+    if (h && headerRe.test(h[2])) { start = i + 1; level = h[1].length; break; }
+  }
+  if (start === -1) return '';
+  const out = [];
+  for (let i = start; i < lines.length; i++) {
+    const h = lines[i].match(/^(#{1,4})\s+/);
+    if (h && h[1].length <= level) break;
+    if (/^-{3,}\s*$/.test(lines[i])) break;
+    out.push(lines[i]);
+  }
+  return out.join('\n').trim();
+}
+// Parse scenario scenes into [{date, title, description}] — for the session
+// scene-picker («🎲 Сессии» tab). Two formats supported:
+//  (a) эталонный — `## Пролог`/`## Сцена N — …`/`## Финал` идут ПРЯМО на
+//      верхнем уровне, без общей обёртки (см. tsirk_tsirk_tsirk/scenario.md);
+//  (b) legacy — сцены вложены как `### Сцена N` под одним `## Сцены`.
+// (a) проверяется первым; если ничего не нашлось — резерв (b), для сценариев,
+// сгенерированных до перехода на эталонный формат.
+// Без `\b` — в JS-регэкспах граница слова основана на ASCII `\w` и не видит
+// кириллицу: после «Пролог» (заканчивается на «г») `\b` не сработал бы никогда.
+const _SCENE_HEADING_RE = /^(Пролог|Сцена\s*\d+|Эпизод\s*\d+|Финал)(?:\s*(?:[—–:.-]\s*(.+))?)?$/i;
+
+function _parseScenarioScenesDirect(text) {
+  const t = String(text || '').replace(/\r\n/g, '\n');
+  const idx = t.search(/^##\s+/m);
+  if (idx === -1) return [];
+  const out = [];
+  for (const part of t.slice(idx).split(/\n(?=##\s+)/)) {
+    const h = part.match(/^##\s+(.+)$/m);
+    if (!h) continue;
+    const head = h[1].replace(/[*_`]/g, '').replace(/^[^\p{L}\d]+/u, '').trim();
+    const sm = head.match(_SCENE_HEADING_RE);
+    if (!sm) continue;
+    const date  = sm[1].trim();
+    const title = (sm[2] || '').trim() || date;
+    const body = part.slice(h[0].length).replace(/^\s+/, '').trim();
+    const desc = body.replace(/^\s*[-*•]\s*/gm, '').replace(/\*\*/g, '').trim();
+    out.push({ date, title, description: desc });
+  }
+  return out;
+}
+
+function _parseScenarioScenesLegacy(text) {
+  const block = _extractScenarioSection(text, /Сцены/i);
+  if (!block) return [];
+  const out = [];
+  for (const part of block.split(/\n(?=#{2,4}\s)/)) {
+    const h = part.match(/^#{2,4}\s+(.+)$/m);
+    if (!h) continue;
+    let head = h[1].replace(/[*_`]/g, '').replace(/^[^\p{L}\d]+/u, '').trim();
+    let date = '', title = head;
+    const sm = head.match(/^((?:Сцена|Эпизод)\s*\d+)\s*[—–:.-]\s*(.+)$/i);
+    if (sm) { date = sm[1].trim(); title = sm[2].trim(); }
+    else { date = head.match(/^(?:Сцена|Эпизод)\s*\d+/i)?.[0] || ''; }
+    const body = part.slice(h[0].length).replace(/^\s+/, '').trim();
+    const desc = body.replace(/^\s*[-*•]\s*/gm, '').replace(/\*\*/g, '').trim();
+    if (title || desc) out.push({ date, title: title || date, description: desc });
+  }
+  return out;
+}
+
+function _parseScenarioScenes(text) {
+  const direct = _parseScenarioScenesDirect(text);
+  // Только "Пролог"/"Финал" без хотя бы одной пронумерованной "Сцена N" не
+  // считается новым форматом — вероятнее, что это старая обёрнутая структура,
+  // где реальные сцены лежат вложенными под "## Сцены" (см. _parseScenarioScenesLegacy).
+  const hasNumberedScene = direct.some(s => /^Сцена\s*\d+/i.test(s.date));
+  return hasNumberedScene ? direct : _parseScenarioScenesLegacy(text);
+}
+// Parse scenario locations into [{name, description}] — meta-комментарий
+// (эталонный формат, см. _extractMetaList) не несёт описаний, только имена;
+// legacy разбор секции «Локации» даёт оба поля.
+function _parseScenarioLocations(text) {
+  const meta = _extractMetaList(text, 'locations');
+  if (meta) return meta.map(name => ({ name, description: '' }));
+
+  const block = _extractScenarioSection(text, /Локаци/i);
+  if (!block) return [];
+  const out = [], seen = new Set();
+  const add = (rawName, rawDesc) => {
+    const name = _cleanLocName(rawName);
+    if (!name || name.length < 2 || name.length > 100) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ name, description: String(rawDesc || '').replace(/[*_`]/g, '').trim() });
+  };
+  for (const line of block.split('\n')) {
+    const bm = line.trim().match(/^[-*•]\s+(.+)$/);
+    if (!bm) continue;
+    const parts = bm[1].split(/\s*(?:[—–]|→|🔗|\|)\s*/);
+    const desc = parts.slice(1).filter(p => p && !/^\[?Карточк/i.test(p)).join(' — ');
+    add(parts[0], desc);
+  }
+  for (const part of block.split(/\n(?=#{2,4}\s)/)) {
+    const h = part.match(/^#{2,4}\s+(.+)$/m);
+    if (!h) continue;
+    const body = part.slice(h[0].length).replace(/^\s+/, '')
+      .split('\n').map(l => l.replace(/^\s*[-*•]\s*/, '').trim()).filter(Boolean).slice(0, 2).join(' ');
+    add(h[1], body);
+  }
+  return out;
+}
+// Parse/write the «## 📍 Связанные локации» section of a module .md
+function _parseModuleLocSlugs(raw) {
+  const m = raw.replace(/\r\n/g, '\n').match(/##\s*📍\s*Связанные локации\s*\n([\s\S]*?)(?=\n##|\s*$)/i);
+  if (!m) return [];
+  return m[1].split('\n').map(l => l.match(/^\s*-\s+(\S+)/)?.[1]).filter(Boolean);
+}
+function _writeModuleLocSlugs(raw, slugs) {
+  const n = raw.replace(/\r\n/g, '\n'); // normalise CRLF so \n## lookahead always works
+  if (!slugs.length) {
+    return n.replace(/\n*##\s*📍\s*Связанные локации[ \t]*\n[\s\S]*?(?=\n##|\s*$)/i, '').trimEnd() + '\n';
+  }
+  const section = `## 📍 Связанные локации\n${slugs.map(s => `- ${s}`).join('\n')}\n`;
+  if (/##\s*📍\s*Связанные локации/i.test(n)) {
+    return n.replace(/##\s*📍\s*Связанные локации[ \t]*\n[\s\S]*?(?=\n##|\s*$)/i, section);
+  }
+  return n.trimEnd() + '\n\n' + section;
+}
+
+// Обходит chronicles/*/modules/*/<mod>.md текущего города и убирает slug удаляемой
+// локации из списка привязанных везде, где он встречается (тихий cascade-unlink,
+// 2026-08-06, план «карточка локации» §2.4/§3.3 — вызывается ПОСЛЕ soft-delete
+// локации из DELETE /api/locations/:slug, чтобы «Связанные локации» модуля не
+// остались с карточкой-заглушкой на удалённый slug).
+async function unlinkLocationFromAllModules(city, locSlug) {
+  const unlinkedFrom = [];
+  const chrRoot = chroniclesDir(city);
+  let chronicles;
+  try { chronicles = await fs.readdir(chrRoot, { withFileTypes: true }); } catch { return unlinkedFrom; }
+  for (const chrEnt of chronicles) {
+    if (!chrEnt.isDirectory() || chrEnt.name.startsWith('_')) continue;
+    const modulesRoot = path.join(chrRoot, chrEnt.name, 'modules');
+    let modules;
+    try { modules = await fs.readdir(modulesRoot, { withFileTypes: true }); } catch { continue; }
+    for (const modEnt of modules) {
+      if (!modEnt.isDirectory()) continue;
+      const modFile = path.join(modulesRoot, modEnt.name, `${modEnt.name}.md`);
+      let raw;
+      try { raw = await fs.readFile(modFile, 'utf-8'); } catch { continue; }
+      const existing = _parseModuleLocSlugs(raw);
+      if (!existing.includes(locSlug)) continue;
+      const filtered = existing.filter(s => s !== locSlug);
+      await writeFileAtomic(modFile, _writeModuleLocSlugs(raw, filtered), 'utf-8');
+      unlinkedFrom.push(`${chrEnt.name}/${modEnt.name}`);
+    }
+  }
+  return unlinkedFrom;
+}
+
+// Parse sessions.md (Phase B log) into [{title, date, scenes, status, body}]
+function _parseSessions(raw) {
+  if (!raw) return [];
+  const text = raw.replace(/\r\n/g, '\n');
+  const out = [];
+  for (const part of text.split(/\n(?=##\s+Сесси)/)) {
+    const h = part.match(/^##\s+(.+)$/m);
+    if (!h || !/Сесси/.test(h[1])) continue;
+    const head   = h[1].trim();
+    const scenes = (part.match(/\*\*Сыграно сцен:\*\*\s*([^\n]*)/)?.[1] || '').trim().replace(/^—$/, '');
+    const status = (part.match(/\*\*Статус модуля:\*\*\s*([^\n]*)/)?.[1] || '').trim();
+    let body = part.slice(part.indexOf(h[0]) + h[0].length)
+      .replace(/^\s*-\s*\*\*Сыграно сцен:\*\*[^\n]*\n?/m, '')
+      .replace(/^\s*-\s*\*\*Статус модуля:\*\*[^\n]*\n?/m, '')
+      .replace(/\n-{3,}\s*$/, '')
+      .trim();
+    if (/^\*\(без заметок\)\*$/.test(body)) body = '';
+    const date = (head.match(/[—–-]\s*(.+)$/)?.[1] || '').trim();
+    out.push({ title: head, date, scenes, status, body: unescapeFreeformBody(body) });
+  }
+  return out;
+}
+
+// Parse npc.md into structured groups for the module page «НПС» tab.
+// Groups: ПК / Каноничные / Модульные. Tolerates bullet, bold and «#### » subsection layouts.
+function _cleanNpcName(s) {
+  return String(s || '').replace(/^[\s>*]+/, '').replace(/^[^\p{L}]+/u, '').replace(/[\s*]+$/, '').trim();
+}
+function _npcCardHref(chunk) {
+  return (chunk.match(/\[Карточка\]\(([^)]+)\)/) || [])[1] || '';
+}
+// Строка-«деталь» мини-листа: «- **Клан:** …», «- **Статус:** …» — это поля НПС,
+// а не сам НПС. Их нельзя принимать за отдельные записи (иначе один персонаж с
+// подзаголовком `### Имя` разваливается на «Клан: …», «Роль: …» и т.п.).
+const _isDetailBullet = t => /^[-*]\s*\*\*[^*\n]+:\*\*/.test(t.trim());
+
+// Разбить тело секции по САМОМУ ВЕРХНЕМУ уровню подзаголовков (### если есть, иначе ####),
+// чтобы `#### ` дети оставались вложенными в свой `### ` родитель, а не становились его
+// сиблингами (иначе подгруппа-родитель и её НПС-ребёнок оба попали бы в список). Возвращает
+// { parts, headRe } — head-regex того же уровня для матчинга заголовка каждого чанка.
+function _npcSubSplit(body) {
+  const h3 = /^###(?!#)\s+/m.test(body);
+  return h3
+    ? { parts: body.split(/\n(?=###(?!#)\s+)/), headRe: /^###(?!#)\s+(.+)$/m }
+    : { parts: body.split(/\n(?=####\s+)/),     headRe: /^####\s+(.+)$/m };
+}
+
+// Formats A/B — по одной записи на строку («- Имя — роль …» / «**Имя** — описание …»).
+// Строки-детали (**Ключ:** …) пропускаются — это поля мини-листа, не НПС.
+function _parseNpcBulletLines(body) {
+  const entries = [];
+  for (const ln of body.split('\n')) {
+    const t = ln.trim();
+    if (!t || /^>/.test(t)) continue;
+    if (!/\[Карточка\]/.test(t) && !/^\s*[-*]/.test(t) && !/^\*\*/.test(t)) continue;
+    if (_isDetailBullet(t)) continue;
+    let prefix = t
+      .replace(/[→➔➜]?\s*🔗?\s*\[Карточка\]\([^)]*\).*$/, '')   // drop «→ 🔗 [Карточка](…)» trailer
+      .replace(/^\s*-\s+/, '')                                   // strip leading «- » bullet
+      .replace(/\*\*/g, '')                                      // drop bold markers
+      .trim();
+    if (!prefix) continue;
+    const [namePart, ...rest] = prefix.split(/\s*[—–]\s*/);
+    const name = _cleanNpcName(namePart);
+    if (!name) continue;
+    entries.push({ name, desc: rest.join(' — ').trim(), cardHref: _npcCardHref(t) });
+  }
+  return entries;
+}
+// Рукописные npc.md используют `### / #### ` двояко: как ИМЯ НПС («### Ламбер Жирон —
+// посредник» + поля-детали) и как ЗАГОЛОВОК ПОДГРУППЫ («### Игровые персонажи» + список
+// НПС-буллетов). Отличаем рекурсивно: если под подзаголовком есть настоящие записи —
+// это подгруппа (спускаемся внутрь); если только поля-детали/проза — сам подзаголовок
+// и есть НПС. Так один разбор покрывает оба уровня и любую вложенность.
+function _parseNpcEntries(body) {
+  if (/^#{3,4}\s+/m.test(body)) {
+    const entries = [];
+    const { parts, headRe } = _npcSubSplit(body);
+    for (const part of parts) {
+      const h = part.match(headRe);
+      if (!h) { entries.push(..._parseNpcBulletLines(part)); continue; } // преамбула до 1-го подзаголовка
+      const after  = part.slice(part.indexOf(h[0]) + h[0].length);
+      const nested = _parseNpcEntries(after);
+      if (nested.length) { entries.push(...nested); continue; }          // подзаголовок = подгруппа
+      const [namePart, ...rest] = h[1].split(/\s*[—–]\s*/);              // подзаголовок = сам НПС
+      const name = _cleanNpcName(namePart);
+      if (!name) continue;
+      const descBits = [rest.join(' — ').trim()];
+      for (const ln of after.split('\n')) {
+        const t = ln.trim();
+        if (!t || /\[Карточка\]/.test(t)) continue;
+        descBits.push(t.replace(/^[-*]\s*/, ''));
+      }
+      entries.push({ name, desc: descBits.filter(Boolean).join(' — ').replace(/\*\*/g, '').trim(), cardHref: _npcCardHref(part) });
+    }
+    return entries;
+  }
+  return _parseNpcBulletLines(body);
+}
+// Секции npc.md, которые НЕ являются ростером НПС (промты изображений, негативный
+// промт, Session 0, служебные заметки) — их `### …` подзаголовки не должны попадать
+// в список персонажей. Классификатор по умолчанию относит любой неизвестный `## `
+// к canon, поэтому такие секции надо отсеивать явно.
+const _NPC_NON_ROSTER = /промт|изображени|негатив|session\s*\d|session\s*0|сесси[яю]/i;
+// Locate the first `## ` heading in npc.md classified as `kind` (pc/canon/modular) —
+// same classification _parseNpcMdGroups uses, so deletion always targets the exact
+// section the «НПС» tab rendered the entry from, regardless of the heading's actual
+// wording (hand-authored files vary: «## 🎭 Игровые персонажи (ПК)» vs «## Персонажи игроков»).
+function _findNpcMdSection(text, kind) {
+  const heads = [];
+  const re = /^##\s+(.+)$/gm;
+  let m;
+  while ((m = re.exec(text))) heads.push({ title: m[1].trim(), at: m.index, bodyStart: m.index + m[0].length });
+  for (let i = 0; i < heads.length; i++) {
+    const title = heads[i].title;
+    if (_NPC_NON_ROSTER.test(title)) continue;
+    const k = /игрок|игров|\bпк\b/i.test(title) ? 'pc'
+            : /модульн|неканон/i.test(title) ? 'modular'
+            : 'canon';
+    if (k === kind) return { bodyStart: heads[i].bodyStart, end: i + 1 < heads.length ? heads[i + 1].at : text.length };
+  }
+  return null;
+}
+// Все `## ` секции данного kind (pc/canon/modular). В рукописных npc.md один kind
+// нередко разбит на несколько секций («Ключевые НПС» + «Ранее существующие НПС» — обе
+// canon), поэтому удаление обязано перебрать их все, а не только первую.
+function _findNpcMdSections(text, kind) {
+  const heads = [];
+  const re = /^##\s+(.+)$/gm;
+  let m;
+  while ((m = re.exec(text))) heads.push({ title: m[1].trim(), at: m.index, bodyStart: m.index + m[0].length });
+  const out = [];
+  for (let i = 0; i < heads.length; i++) {
+    const title = heads[i].title;
+    if (_NPC_NON_ROSTER.test(title)) continue;
+    const k = /игрок|игров|\bпк\b/i.test(title) ? 'pc'
+            : /модульн|неканон/i.test(title) ? 'modular'
+            : 'canon';
+    if (k === kind) out.push({ bodyStart: heads[i].bodyStart, end: i + 1 < heads.length ? heads[i + 1].at : text.length });
+  }
+  return out;
+}
+// Remove one entry (by display name) from a npc.md section body — зеркалит разбор в
+// _parseNpcEntries (буллет/жирная строка, `### / #### ` подзаголовок-НПС, и НПС внутри
+// подгрупп-подзаголовков). Возвращает сырой текст удалённой записи (чтобы вытащить её
+// cardHref/slug) или null, если совпадения не нашлось.
+function _removeNpcEntry(body, targetName) {
+  const targetClean = _cleanNpcName(targetName).toLowerCase();
+  if (/^#{3,4}\s+/m.test(body)) {
+    const { parts, headRe } = _npcSubSplit(body);
+    let removedChunk = null;
+    const kept = parts.map(part => {
+      if (removedChunk) return part;                       // only remove the first match
+      const h = part.match(headRe);
+      if (!h) {                                            // преамбула — буллеты до подзаголовков
+        const r = _removeBulletEntry(part, targetClean);
+        if (r.removedChunk) removedChunk = r.removedChunk;
+        return r.body;
+      }
+      const headEnd = part.indexOf(h[0]) + h[0].length;
+      const after   = part.slice(headEnd);
+      if (_parseNpcEntries(after).length) {                // подзаголовок = подгруппа → внутрь
+        const r = _removeNpcEntry(after, targetName);
+        if (r.removedChunk) { removedChunk = r.removedChunk; return part.slice(0, headEnd) + r.body; }
+        return part;
+      }
+      const [namePart] = h[1].split(/\s*[—–]\s*/);         // подзаголовок = сам НПС → срезаем чанк
+      if (_cleanNpcName(namePart).toLowerCase() === targetClean) { removedChunk = part; return null; }
+      return part;
+    }).filter(p => p !== null);
+    return { body: kept.join('\n'), removedChunk };
+  }
+  return _removeBulletEntry(body, targetClean);
+}
+// Удалить одну буллет/жирную строку-НПС (Formats A/B); поля-детали (**Ключ:** …) не трогаем.
+function _removeBulletEntry(body, targetClean) {
+  let removedChunk = null;
+  const kept = body.split('\n').filter(ln => {
+    if (removedChunk) return true;
+    const t = ln.trim();
+    if (!t || /^>/.test(t)) return true;
+    if (!/\[Карточка\]/.test(t) && !/^\s*[-*]/.test(t) && !/^\*\*/.test(t)) return true;
+    if (_isDetailBullet(t)) return true;
+    const prefix = t
+      .replace(/[→➔➜]?\s*🔗?\s*\[Карточка\]\([^)]*\).*$/, '')
+      .replace(/^\s*-\s+/, '')
+      .replace(/\*\*/g, '')
+      .trim();
+    const [namePart] = prefix.split(/\s*[—–]\s*/);
+    const name = _cleanNpcName(namePart);
+    if (name && name.toLowerCase() === targetClean) { removedChunk = ln; return false; }
+    return true;
+  });
+  return { body: kept.join('\n'), removedChunk };
+}
+function _parseNpcMdGroups(raw) {
+  if (!raw) return [];
+  const text = raw.replace(/^﻿/, '').replace(/\r\n/g, '\n');
+  const heads = [];
+  const re = /^##\s+(.+)$/gm;
+  let m;
+  while ((m = re.exec(text))) heads.push({ title: m[1].trim(), bodyStart: m.index + m[0].length, at: m.index });
+  const groups = [];
+  for (let i = 0; i < heads.length; i++) {
+    const body  = text.slice(heads[i].bodyStart, i + 1 < heads.length ? heads[i + 1].at : text.length);
+    const title = heads[i].title;
+    if (_NPC_NON_ROSTER.test(title)) continue;
+    const kind  = /игрок|игров|\bпк\b/i.test(title) ? 'pc'
+                : /модульн|неканон/i.test(title) ? 'modular'
+                : 'canon';
+    const entries = _parseNpcEntries(body);
+    if (entries.length) groups.push({ title, kind, entries });
+  }
+  return groups;
+}
+// Render one session block for sessions.md.
+// sanitizeFreeformBody escapes any line in `body` that starts with '#'/'##' —
+// otherwise it reads as a real heading on the next parse and _parseSessions
+// (which splits purely on "\n(?=##\s+Сесси)") fabricates a whole extra, bogus
+// session entry out of it (FIX-2, docs/audit/2026-07-28-fix-plan.md). date/scenes/
+// status are single-line fields — sanitizeInlineText keeps them that way.
+function _renderSessionBlock(n, date, scenes, status, body) {
+  return [
+    '', '---', '',
+    `## Сессия ${n} — ${sanitizeInlineText(date) || new Date().toISOString().slice(0, 10)}`, '',
+    `- **Сыграно сцен:** ${sanitizeInlineText(scenes) || '—'}`,
+    `- **Статус модуля:** ${sanitizeInlineText(status) || '🟡 В процессе'}`, '',
+    sanitizeFreeformBody((body || '').trim()) || '*(без заметок)*', '',
+  ].join('\n');
+}
+// Rewrite the whole sessions.md from the session array (append & edit share this)
+async function _writeSessionsFile(modDir, mod, sessions) {
+  const titleM = (await fs.readFile(path.join(modDir, `${mod}.md`), 'utf-8').catch(() => '')).replace(/^﻿/, '').match(/^#\s+(.+)$/m);
+  const modTitle = titleM ? titleM[1].replace(/[*[\]]/g, '').trim() : mod;
+  const header = `# Журнал сессий: ${modTitle}\n\n> 🔗 [Модуль](${mod}.md) | [Сценарий](scenario.md)\n> Фаза B — ведение во время игры. Правила: system/rules/module_rules.md`;
+  const blocks = sessions.map((s, i) => _renderSessionBlock(i + 1, s.date, s.scenes, s.status, s.body)).join('');
+  await writeFileAtomic(path.join(modDir, 'sessions.md'), header + blocks + '\n', 'utf-8');
+}
+// Patch <mod>.md after generation WITHOUT destroying its concept/participants
+async function _patchModuleMain(modDir, mod, firstLoc) {
+  const p = path.join(modDir, `${mod}.md`);
+  let txt = await fs.readFile(p, 'utf-8').catch(() => '');
+  if (!txt) return;
+  if (!/\[Сценарий\]\(scenario\.md\)/.test(txt)) {
+    txt = txt.replace(/^(>\s*🔗\s*\[Хроника\]\([^)]*\))(.*)$/m,
+      `$1 | [Сценарий](scenario.md) | [НПС](npc.md)$2`);
+  }
+  if (firstLoc) {
+    txt = txt.replace(/(\|\s*\*\*Локация\*\*\s*\|)([^|\n]*)\|/,
+      (m, pre, val) => val.trim() ? m : `${pre} ${firstLoc} |`);
+  }
+  await writeFileAtomic(p, txt, 'utf-8');
+}
+
+// ── Scene notes (scene_notes.md) — «## <сцена>» с вложенными «### Сессия N»,
+// по одной на каждую живую игровую сессию, в которой к сцене что-то дописали.
+// Сцена нередко доигрывается в несколько заходов (начата в Сессии 1,
+// продолжена в Сессии 3) — раньше на сцену был только один плоский текст, и
+// вторая запись тихо стирала первую. Структурно это та же вложенность `##`/
+// `###`, что и в scenario.md (см. lib/parsers/scenario.js splitH3Body/
+// parseScenarioSections), поэтому парсер/сериализатор переиспользуются
+// напрямую, отдельного формата не заводим. Заметки, сохранённые ДО этой
+// правки (плоское тело сцены без ###-детей) не мигрируются принудительно —
+// level-2 body сцены остаётся как есть, GET /scene-notes отдаёт его отдельной
+// записью без номера сессии (см. routes/modules/sessions.js), новые записи
+// только ДОБАВЛЯЮТСЯ к нему.
+function _upsertSceneNoteEntry(raw, sceneHeading, session, text) {
+  const { preamble, sections } = parseScenarioSections(raw);
+  const entryHeading = `Сессия ${session}`;
+  // sanitizeFreeformBody: a '###'-starting line in the note would otherwise read as
+  // a real level-3 heading on the next parse, fabricating a bogus session entry in
+  // this scene's note history (FIX-2, docs/audit/2026-07-28-fix-plan.md).
+  const cleanBody = sanitizeFreeformBody(String(text == null ? '' : text).trim());
+  const sceneIdx = sections.findIndex(s => s.level === 2 && s.heading === sceneHeading);
+  if (sceneIdx === -1) {
+    sections.push({ heading: sceneHeading, body: '', level: 2, parent: null });
+    sections.push({ heading: entryHeading, body: cleanBody, level: 3, parent: sceneHeading });
+    return serializeScenarioSections(preamble, sections);
+  }
+  let i = sceneIdx + 1;
+  while (i < sections.length && sections[i].level === 3 && sections[i].parent === sceneHeading) {
+    if (sections[i].heading === entryHeading) {
+      sections[i] = { ...sections[i], body: cleanBody };
+      return serializeScenarioSections(preamble, sections);
+    }
+    i++;
+  }
+  sections.splice(i, 0, { heading: entryHeading, body: cleanBody, level: 3, parent: sceneHeading });
+  return serializeScenarioSections(preamble, sections);
+}
+
+// ── Session notes (## 📝 Заметки сессии внутри <mod>.md) ───────────────────────
+// <mod>.md — не «чистый» файл заметок: метаданные (таблица), участники,
+// концепция и т.д. Полная реконструкция через parseScenarioSections/
+// serializeScenarioSections рискует переформатировать секции, которых этот
+// апсерт вообще не должен касаться — поэтому здесь узкий regex-патч в духе
+// _patchModuleMain выше: находит `## <heading>` и правит только тело до
+// следующего `## ` (или до конца файла), не трогая остальной текст.
+function _moduleSectionHeadingRe(heading) {
+  const escaped = String(heading).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // [ \t]*$ — NOT \s*$: \s matches \n too, and with the `m` flag $ is
+  // satisfied right before ANY \n, so a greedy \s*$ can backtrack into
+  // swallowing the blank line after the heading into the match itself,
+  // making `start` (and the replace-path body) drift by one newline on
+  // every subsequent upsert. Restrict trailing match to same-line whitespace.
+  return new RegExp(`^##\\s+${escaped}[ \\t]*$`, 'm');
+}
+// Finds where the CURRENT section's body ends within `rest` (the text right
+// after its heading line): at the next `## `-heading, or at end of string if
+// there isn't one. Critically, if a `---`-separator sits directly before that
+// next heading (blank line + `---` + blank line + `## `, the format used
+// between sections in `<mod>.md` — see e.g. cities/balmont/.../vstrecha_v_parke.md),
+// the boundary is placed BEFORE the separator's leading blank line, so the
+// separator is treated as belonging to the NEXT section, not swallowed into
+// this one's body. Returns idx === -1 when there is no following heading.
+function _moduleSectionBodyBoundary(rest) {
+  const sepThenHeading = rest.match(/\n+---[ \t]*\n+##\s+/);
+  if (sepThenHeading) return { idx: sepThenHeading.index, hasSep: true };
+  return { idx: rest.search(/\n##\s+/), hasSep: false };
+}
+async function _upsertModuleSection(modDir, mod, heading, body) {
+  const p = path.join(modDir, `${mod}.md`);
+  let txt = await fs.readFile(p, 'utf-8').catch(() => '');
+  // sanitizeFreeformBody: a '## '-starting line in the body would otherwise be
+  // mistaken for the start of the NEXT section by _moduleSectionBodyBoundary on
+  // the next upsert, silently truncating this section / corrupting the one after
+  // it (FIX-2, docs/audit/2026-07-28-fix-plan.md).
+  const cleanBody = sanitizeFreeformBody(String(body == null ? '' : body).trim());
+  const headingRe = _moduleSectionHeadingRe(heading);
+  const m = headingRe.exec(txt);
+  if (m) {
+    const start = m.index + m[0].length;
+    const rest = txt.slice(start);
+    const { idx: nextIdx, hasSep } = _moduleSectionBodyBoundary(rest);
+    const end = nextIdx === -1 ? txt.length : start + nextIdx;
+    const tail = txt.slice(end);
+    // hasSep: `tail` already starts with the blank-line + `---` + blank-line
+    // glue verbatim, so it must NOT get an extra '\n' glued on top of it (that
+    // would leave a doubled blank line before the separator). Without a
+    // separator, `tail` starts with a single '\n' right before the next `## `
+    // (or is empty at EOF) and needs the usual '\n' to restore the blank line.
+    txt = hasSep
+      ? txt.slice(0, start) + '\n\n' + cleanBody + tail
+      : txt.slice(0, start) + '\n\n' + cleanBody + '\n' + tail;
+  } else {
+    txt = txt.replace(/\s*$/, '') + `\n\n---\n\n## ${heading}\n\n${cleanBody}\n`;
+  }
+  await writeFileAtomic(p, txt, 'utf-8');
+}
+// Читает тело секции тем же паттерном, каким _upsertModuleSection её находит —
+// GET-эндпоинт должен видеть ровно то, что найдёт последующий апсерт.
+async function _readModuleSection(modDir, mod, heading) {
+  const p = path.join(modDir, `${mod}.md`);
+  const txt = await fs.readFile(p, 'utf-8').catch(() => '');
+  const m = _moduleSectionHeadingRe(heading).exec(txt);
+  if (!m) return '';
+  const start = m.index + m[0].length;
+  const rest = txt.slice(start);
+  const { idx: nextIdx } = _moduleSectionBodyBoundary(rest);
+  const body = nextIdx === -1 ? rest : rest.slice(0, nextIdx);
+  return unescapeFreeformBody(body.trim());
+}
+
+// Захардкоженный model-оверрайд (дешёвая/быстрая модель вместо дефолтной) имеет
+// смысл только для Claude-источника — для openrouter/openai/gemini голый
+// Anthropic model ID не резолвится и роняет запрос 400-й ошибкой (_isOA/_oaCall
+// в server.js шлют его как есть, без валидации). Возвращает model только если
+// gen реально Claude (api-key или claude-login), иначе null → genTextWithRetry
+// использует gen.model, уже подобранный makeGenerationClient под провайдера.
+function _claudeOnlyModel(gen, model) {
+  return (gen && (gen.source === 'api-key' || gen.source === 'claude-login')) ? model : null;
+}
+
+// Тот же класс проблемы, что _isBogusAppearance (было приватно в routes/generation.js) —
+// непустой, но бессмысленный ответ модели (модерационный отказ/утечка рассуждений)
+// не должен приниматься как валидный сгенерированный контент. Обобщено на весь
+// модуль-пайплайн после инцидента 2026-08 (кодревью 2026-08-11, F2): closing/fill
+// генерация принимала отказ Claude OAuth («User Safety: unsafe / Safety Categories:
+// Criminal Planning...») как ok:true и писала его в finale.md/events.md поверх
+// реальных данных пользователя. minLength настраиваемый — ожидаемая длина разного
+// контента разная (портрет ~100-300 символов, финал ~1500-2500, сценарий ~5000+).
+const _BOGUS_GEN_RE = /^(user safety|content policy|i cannot|i can'?t assist|as an ai|i'm not able to|i won'?t)\b/i;
+function isBogusGeneration(text, minLength = 200) {
+  return !text || text.trim().length < minLength || _BOGUS_GEN_RE.test(text.trim());
+}
+
+// Клан → тон дневниковой прозы. Общее между «Log session» (routes/tools.js,
+// каждый отмеченный участник сессии) и закрытием модуля (lifecycle.js,
+// closing-stub каждому участнику модуля) — единый источник, чтобы тон не
+// разъезжался между двумя местами, где рождается один и тот же тип stub'а.
+const CLAN_DIARY_STYLE = {
+  'тореадор':       'Эстетический, чувственный, драматичный',
+  'вентру':         'Контролируемый, аналитический, статус-ориентированный',
+  'малкавиан':      'Фрагментированный, символичный, скачущий',
+  'носферату':      'Циничный, наблюдательный, теневой',
+  'гэнгрел':        'Дикий, инстинктивный, немногословный',
+  'бруха':          'Страстный, бунтарский, прямой',
+  'тремер':         'Методичный, оккультный, осторожный',
+  'цимисхи':        'Отстранённый, висцеральный, философский',
+  'каппадокий':     'Отстранённый, висцеральный, философский',
+  'ассамит':        'Дисциплинированный, ритуальный, сдержанный',
+  'тзими':          'Отстранённый, висцеральный, философский',
+  'красная шапка':  'Архаичный, хищный, прямой',
+  'слуаг':          'Лаконичный, теневой, точный',
+  'пак':            'Игровой, импульсивный, момент настоящего',
+  'сидхи':          'Возвышенный, церемониальный',
+};
+function diaryToneFor(c) {
+  const clan = (c.clan || '').toLowerCase();
+  for (const k in CLAN_DIARY_STYLE) if (clan.includes(k)) return CLAN_DIARY_STYLE[k];
+  if (c.lineage === 'mortal') return 'Наблюдательный, человеческий';
+  if (c.lineage === 'fairy')  return 'Грёзовый, образный';
+  return 'Меланхоличный';
+}
+
+// Фабрика: server.js передаёт AI-хелперы и character-sheet генерацию при монтировании.
+
+module.exports = {
+  path, fs, serverError, aiRateLimit, _logAiCall, _logAiFail,
+  ROOT, cityDir, charsDir, locsDir, chroniclesDir, archiveDir,
+  reqCity, writeFileAtomic, invalidateChars,
+  getAllCharacters, getAllLocations, listModules, tableCell, LINEAGE_MAP,
+  _nameMatch, rmdir, getChronicleDisplay,
+  slugify, parseEvent, parseScenarioSections, replaceScenarioSection, replaceScenarioSections,
+  splitH3Body, serializeScenarioSections, findScenarioSectionIndex, checkScenarioStructure,
+  insertScenarioScene, hasManualSceneMarker, clearManualSceneMarker, isFinaleHeading,
+  MOD_AUX, syncChronicleModuleLinks, getCityDisplayName, _npcSheetPaths, _checkNpcPromotion, _hasTraversal,
+  _cleanLocName, _locType, _extractMetaList, _extractLocNamesFromScenario, _extractNpcNamesFromScenario,
+  _renderModuleNpcMd, _charTimelineDigest, _extractScenarioSection, _SCENE_HEADING_RE,
+  _parseScenarioScenesDirect, _parseScenarioScenesLegacy, _parseScenarioScenes, _parseScenarioLocations,
+  _parseModuleLocSlugs, _writeModuleLocSlugs, unlinkLocationFromAllModules, _parseSessions, _cleanNpcName, _npcCardHref,
+  _parseNpcEntries, _findNpcMdSection, _findNpcMdSections, _removeNpcEntry, _parseNpcMdGroups, _renderSessionBlock,
+  _writeSessionsFile, _patchModuleMain, _claudeOnlyModel, isBogusGeneration,
+  _upsertSceneNoteEntry, _upsertModuleSection, _readModuleSection,
+  sanitizeInlineText, escapeTableCell, unescapeTableCell, sanitizeFreeformBody, unescapeFreeformBody,
+  diaryToneFor,
+};

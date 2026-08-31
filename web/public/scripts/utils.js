@@ -1,0 +1,262 @@
+// ── Shared browser-side utilities ──────────────────────────────────────────
+// Pure/self-contained helpers used across the SPA. No module system in this
+// static frontend — loaded via <script> before scripts.js (see index.html),
+// declares plain globals. Вынесено из scripts.js (E2.1).
+
+// NOTE: _NTR MUST mirror CYRILLIC_TR in web/lib/parsers.js (this is the browser copy —
+// no module system in the static SPA). A unit test (slugify — browser parity) enforces it.
+const _NTR = { а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya' };
+// _LATIN_TR mirrors LATIN_TR in web/lib/parsers.js — non-decomposing Latin letters.
+const _LATIN_TR = { ø:'o', ł:'l', đ:'d', ı:'i', ß:'ss', æ:'ae', œ:'oe', þ:'th', ð:'d' };
+function slugifyJS(s) { return (s || '').toLowerCase().split('').map(c => _NTR[c] !== undefined ? _NTR[c] : c).join('').normalize('NFKD').replace(/[̀-ͯ]/g, '').split('').map(c => _LATIN_TR[c] !== undefined ? _LATIN_TR[c] : c).join('').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/_+/g, '_'); }
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s) { return escHtml(s).replace(/"/g, '&quot;'); }
+
+// Иконка-тултип с пояснением поля — ставится сразу после текста лейбла/названия.
+// Всплывающий текст появляется справа от иконки при наведении/фокусе (см. .field-tip
+// в styles.css). Используется во всех формах создания/редактирования (сценарий,
+// персонаж, локация, город) — единый механизм, не дублировать под другим именем.
+function fieldTip(text) {
+  if (!text) return '';
+  return ` <span class="field-tip" tabindex="0" data-tip="${escAttr(text)}">ⓘ</span>`;
+}
+
+// Всплывающий попап для .field-tip — единый DOM-элемент в <body>, позиционируется
+// через getBoundingClientRect() на hover/focus (см. .field-tip-popup в styles.css
+// для истории, почему это не CSS ::after). Делегировано на document, а не навешено
+// при создании иконки, — .field-tip вставляется через innerHTML в десятках мест
+// (fieldTip() выше), отдельных обработчиков на каждый инстанс не будет.
+let _fieldTipPopupEl = null;
+function _fieldTipPopup() {
+  if (!_fieldTipPopupEl) {
+    _fieldTipPopupEl = document.createElement('div');
+    _fieldTipPopupEl.className = 'field-tip-popup';
+    document.body.appendChild(_fieldTipPopupEl);
+  }
+  return _fieldTipPopupEl;
+}
+function _showFieldTip(trigger) {
+  const text = trigger.dataset.tip;
+  if (!text) return;
+  const popup = _fieldTipPopup();
+  popup.textContent = text;
+  const r = trigger.getBoundingClientRect();
+  const width = Math.min(300, window.innerWidth * 0.6, 320);
+  let left = r.right + 9;
+  if (left + width > window.innerWidth - 8) left = r.left - width - 9;
+  popup.style.left = Math.max(8, left) + 'px';
+  popup.style.top = (r.top + r.height / 2) + 'px';
+  popup.classList.add('show');
+}
+function _hideFieldTip() {
+  if (_fieldTipPopupEl) _fieldTipPopupEl.classList.remove('show');
+}
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest('.field-tip');
+  if (t) _showFieldTip(t);
+});
+document.addEventListener('mouseout', e => {
+  const t = e.target.closest('.field-tip');
+  if (t && !t.contains(e.relatedTarget)) _hideFieldTip();
+});
+document.addEventListener('focusin', e => {
+  const t = e.target.closest('.field-tip');
+  if (t) _showFieldTip(t);
+});
+document.addEventListener('focusout', e => {
+  if (e.target.closest('.field-tip')) _hideFieldTip();
+});
+
+// ── Toast / Confirm utilities ──────────────────────────────
+function showToast(message, type = 'info', duration = 4000) {
+  const container = document.getElementById('toast-container');
+  if (!container) { console.error(message); return; }
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('fade-out');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  }, duration);
+}
+
+// Единственный открытый оверлей (или null) — защита от повторного вызова
+// showConfirm() до того, как предыдущий диалог резолвится (двойной клик по
+// кнопке-триггеру, дважды вызывающей showConfirm без ожидания первого
+// результата). Без этого гварда каждый вызов создавал НОВЫЙ
+// <div id="confirm-overlay"> (дублирующийся id — невалидный HTML) поверх
+// предыдущего; после подтверждения верхнего нижний оставался на экране
+// полностью интерактивной «сиротой», ссылающейся на устаревшее состояние
+// (например, индекс уже удалённой записи) — см.
+// docs/audit/2026-07-28-session-feature-qa-report.md, находка №1.
+let _confirmOverlay = null;
+
+function showConfirm(message, { danger = false, confirmText = 'Подтвердить', cancelText = 'Отмена' } = {}) {
+  if (_confirmOverlay) {
+    _confirmOverlay.querySelector('#_conf-ok')?.focus();
+    return Promise.resolve(false); // диалог уже открыт — второй (дублирующий) вызов молча отклоняется
+  }
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.id = 'confirm-overlay';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    ov.setAttribute('aria-labelledby', '_conf-msg');
+    ov.innerHTML = `
+      <div class="confirm-box">
+        <div class="confirm-msg" id="_conf-msg">${escHtml(message)}</div>
+        <div class="confirm-acts">
+          <button class="chr-modal-btn ${danger ? 'danger' : 'create'}" id="_conf-ok">${escHtml(confirmText)}</button>
+          <button class="chr-modal-btn cancel" id="_conf-cancel">${escHtml(cancelText)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    _confirmOverlay = ov;
+    const cleanup = (result) => { ov.remove(); _confirmOverlay = null; document.removeEventListener('keydown', onKey); resolve(result); };
+    const onKey = (e) => { if (e.key === 'Escape') cleanup(false); };
+    document.addEventListener('keydown', onKey);
+    ov.querySelector('#_conf-ok').onclick     = () => cleanup(true);
+    ov.querySelector('#_conf-cancel').onclick = () => cleanup(false);
+    ov.addEventListener('click', e => { if (e.target === ov) cleanup(false); });
+    ov.querySelector('#_conf-ok').focus();
+  });
+}
+
+// ── Import from JSON (обратная операция для «⇩ Экспорт» на персонажах/локациях) ──
+// `kind` — 'characters' | 'locations', должен совпадать с ключом тела запроса
+// и последним сегментом /api/import/<kind>. Файл должен быть тем же JSON-массивом,
+// что отдаёт /api/export/<kind> (обязательно поле `raw` — полное содержимое карточки).
+async function importCardsFromFile(kind, file, onDone) {
+  if (!file) return;
+  let items;
+  try {
+    items = JSON.parse(await file.text());
+  } catch (e) {
+    showToast('Не удалось прочитать JSON-файл: ' + e.message, 'error');
+    return;
+  }
+  if (!Array.isArray(items) || !items.length) {
+    showToast('Файл не содержит массива для импорта', 'warning');
+    return;
+  }
+  try {
+    const r = await fetch(`/api/import/${kind}${window.location.search}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [kind]: items }),
+    });
+    const result = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(result.error || 'Ошибка импорта');
+    const parts = [`Импортировано: ${result.created.length}`];
+    if (result.skipped?.length) parts.push(`уже есть (пропущено): ${result.skipped.length}`);
+    if (result.errors?.length)  parts.push(`ошибок: ${result.errors.length}`);
+    showToast(parts.join(', '), result.errors?.length ? 'warning' : 'success');
+    onDone?.();
+  } catch (e) {
+    showToast('Импорт не удался: ' + e.message, 'error');
+  }
+}
+
+function getOrigLabel(id) {
+  return {
+    'btn-new-city':    'Создать домен',
+    'btn-validate':    'Проверить',
+    'btn-validate-fix':'Исправить автоматически',
+  }[id] || 'Выполнить';
+}
+
+// ── Modal focus management ──────────────────────────────────────────────
+// Replaces a prior MutationObserver-based auto-trap (watched .open on any
+// .chr-modal-backdrop/.modal-overlay) that looked correct but was empirically
+// confirmed non-functional (impeccable audit 2026-07-12 + CDP verification:
+// focus never entered the modal, Tab escaped freely, Escape did nothing).
+// This version is explicit — every modal open/close call site calls these
+// two functions directly instead of relying on a passive class-attribute
+// watcher, so there's no timing ambiguity about when focusableEls() runs
+// relative to the class/layout change.
+const _modalState = new Map(); // id -> { prevFocus, trapHandler }
+
+const _FOCUSABLE_SEL = 'button:not([disabled]), [href], input:not([disabled]), ' +
+  'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function _modalFocusables(modal) {
+  return Array.from(modal.querySelectorAll(_FOCUSABLE_SEL))
+    .filter(el => el.offsetParent !== null);
+}
+
+// focusSelector: optional CSS selector (scoped to the modal) for the element
+// to focus on open — e.g. a name input. Falls back to the first focusable
+// element. Pass null to just focus the modal's first focusable child.
+function openModal(id, focusSelector = null) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  // A redundant open (e.g. two rapid clicks before the prior open settles)
+  // must not leak the previous trapHandler off of `document`.
+  const existing = _modalState.get(id);
+  if (existing) document.removeEventListener('keydown', existing.trapHandler);
+  const prevFocus = document.activeElement;
+  modal.classList.add('open');
+
+  // Most modals in this app are shown via a CSS `visibility: hidden -> visible`
+  // transition (not display:none -> block), so an element can report a
+  // non-null offsetParent (unaffected by visibility) while still being
+  // un-focusable the instant classList.add() runs, before the browser
+  // applies the new computed style. Deferring one frame fixes it reliably.
+  requestAnimationFrame(() => {
+    const toFocus = (focusSelector && modal.querySelector(focusSelector)) || _modalFocusables(modal)[0];
+    toFocus?.focus();
+  });
+
+  // Listens on `document` (not `modal`) so Escape/Tab work even in the brief
+  // window before focus actually lands inside the modal — a keydown handler
+  // on the modal element itself only fires once an event bubbles from a
+  // descendant that already has focus.
+  const trapHandler = e => {
+    if (!modal.classList.contains('open')) return;
+    if (e.key === 'Escape') { closeModal(id); return; }
+    if (e.key !== 'Tab') return;
+    const els = _modalFocusables(modal);
+    if (!els.length) return;
+    const first = els[0], last = els[els.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+  document.addEventListener('keydown', trapHandler);
+  _modalState.set(id, { prevFocus, trapHandler });
+}
+
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.remove('open');
+  const state = _modalState.get(id);
+  if (state) {
+    document.removeEventListener('keydown', state.trapHandler);
+    if (state.prevFocus && typeof state.prevFocus.focus === 'function') state.prevFocus.focus();
+    _modalState.delete(id);
+  }
+}
+
+// ── apiFetch: opt-in helper for consistent fetch error handling ────────────
+// docs/audit/2026-07-09-project-improvement-plan.md P1.7 found ~140 raw
+// fetch() calls across the frontend with inconsistent .catch()/.ok handling
+// (some silently swallow errors, some don't check status at all). Rewriting
+// all 140 at once was explicitly out of scope (too much surface for one
+// pass) — this helper exists so NEW code, and code touched incidentally
+// while fixing something else, has a one-line consistent option instead of
+// hand-rolling try/catch + .ok checks again. Throws on network failure or a
+// non-2xx response (with the parsed JSON body's `.error` if present).
+async function apiFetch(url, opts) {
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (e) {
+    throw new Error(`Сеть недоступна: ${e.message}`);
+  }
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error || `Запрос не удался (${res.status})`);
+  return body;
+}

@@ -1,0 +1,1712 @@
+// Вынесено из scripts.js (E2.3): страница локаций, детальная модалка, редактор/генератор, панель локаций модуля.
+// Зависит от глобалей: STATE, CITY, escHtml, escAttr, showToast, showConfirm (см. utils.js), fetch/document.
+
+// ═══════════════════════════════════════════════════════════════
+// Locations
+// ═══════════════════════════════════════════════════════════════
+
+// «Статус» (2026-08-06, техспека «Статус заменяет Зону») — заменяет прежнюю
+// «Зону контроля» в шапке детальной модалки. Значение теперь чистый тип из
+// CITY_LOCATION_TYPES (city.js) — без маркера/заметки, прямое сравнение по
+// словарю, а не подстрочный матчинг (тем и отличается от прежнего zoneClass()).
+const STATUS_BADGE_CLASS = {
+  'Элизиум':        'elysium',
+  'Приёмная князя': 'prince',
+  'Убежище':        'haven',
+  'Шериф':          'sheriff',
+  'Сенешаль':       'seneschal',
+};
+function _statusClass(status) { return STATUS_BADGE_CLASS[status] || 'other'; }
+
+// 🎭-иконка вместо цветного кружка — на карточке (см. _locCardHtml) она стоит
+// рядом с бейджем зоны/опасности, у которого свой кружок; без иконки-оси два
+// «Высокий» неотличимы друг от друга (2026-08-02-location-card-modal-plan.md §1).
+const MASQ_BADGE_LABELS = {
+  low:     '🎭 Низкий',
+  medium:  '🎭 Средний',
+  high:    '🎭 Высокий',
+};
+
+const DANGER_BADGE_LABELS = {
+  low:     '⚔️ Низкий',
+  medium:  '⚔️ Средний',
+  high:    '⚔️ Высокий',
+};
+
+// B2 (2026-08-07): тултипов для полей локации не было вообще ни одного (grep
+// "field-tip|fieldTip|data-tip" по этому файлу — 0 совпадений). Ключи — по видимому тексту
+// лейбла, тем же принципом, что CHAR_FIELD_TIPS/CITY_FIELD_TIPS (scripts.js/city.js).
+const LOCATION_FIELD_TIPS = {
+  'Название':              'Тип локации в общем смысле — бар, склад, особняк и т.п. (не собственное имя, оно в заголовке карточки).',
+  'Район':                 'Район города, к которому привязана локация — определяет доступные datalist-подсказки и вложенность папок.',
+  'Дополнение к адресу':   'Уточнение к адресу — этаж, вход, ориентир на местности, не входящее в основной адрес.',
+  'Адрес':                 'Физический адрес локации в мире хроники — как его назвал бы персонаж.',
+  'Контроль':              'Кто фактически контролирует локацию — фракция, клан или персонаж, реально определяющий, что там происходит.',
+  'Статус':                'Тип значимого места — синхронизируется с «Отмеченными локациями» города: смени тип здесь или там, отразится в обоих местах. Если у записи в городе есть заметка — снять статус можно только через вкладку «География» города.',
+  'Фракция':               'Фракция, ассоциированная с локацией — не обязательно совпадает с «Контроль». Заменяется на «Хозяин», если включён «Частный домен».',
+  'Хозяин':                'Персонаж, которому принадлежит локация как частный домен — вместо фракции. Список подсказок берётся из персонажей, не из фракций.',
+  'Постоянные фигуры':     'Персонажи, регулярно присутствующие в этой локации — кого там встретить обычное дело.',
+  'Угрозы':                'Опасности, характерные для локации — не «Опасность» (цветной индикатор ниже), а текстовое описание конкретных угроз.',
+  'Маскарад':              'Уровень риска нарушения Маскарада в этой локации — насколько беспечно тут вести себя вампирам.',
+  'Опасность':             'Уровень опасности локации для персонажей — 🟢 низкий / 🟡 средний / 🔴 высокий, самостоятельная характеристика места, не связанная со «Статусом».',
+  'Частный домен':         'Локация принадлежит конкретному персонажу, а не фракции — переключает соседнее поле в «Хозяин» и список подсказок на персонажей вместо фракций.',
+};
+
+// Уровень опасности — собственное поле «Опасность» (техспека §13.1), отдельное от
+// «Зоны» (та — про «чья зона контроля», это — про то, насколько там опасно; раньше
+// оба смысла жили в одном поле «Зона», разведены по разным инлайн-метаданным).
+function zoneDangerLevel(dangerLevel) {
+  if (!dangerLevel) return 'unknown';
+  if (dangerLevel.includes('🟢')) return 'low';
+  if (dangerLevel.includes('🟡')) return 'medium';
+  if (dangerLevel.includes('🔴')) return 'high';
+  return 'unknown';
+}
+
+async function loadLocations() {
+  if (STATE.locations.length) { renderLocations(); return; }
+  document.getElementById('locs-grid').innerHTML =
+    '<div class="loading-state"><div class="spinner"></div>Загрузка...</div>';
+  try {
+    const data = await fetch('/api/locations').then(r => r.json());
+    STATE.locations = Array.isArray(data) ? data : [];
+    populateDistrictFilter();
+    renderLocations();
+  } catch {
+    document.getElementById('locs-grid').innerHTML =
+      '<div class="loading-state" style="color:var(--accent3)">⚠ Не удалось загрузить локации</div>';
+  }
+}
+
+function populateDistrictFilter() {
+  const sel = document.getElementById('loc-filter-district');
+  const current = sel.value;
+  const districts = [...new Set(
+    STATE.locations.map(l => l.district).filter(Boolean)
+  )].sort((a, b) => {
+    const na = parseInt(a), nb = parseInt(b);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return a.localeCompare(b, 'ru');
+  });
+  sel.innerHTML = '<option value="all">Все округа</option>' +
+    districts.map(d => `<option value="${escHtml(d)}">${escHtml(d)}</option>`).join('');
+  if (districts.includes(current)) sel.value = current;
+}
+
+function renderLocations() {
+  const { zone, masq, district, search } = STATE.locFilter;
+  let list = STATE.locations;
+  if (zone     !== 'all') list = list.filter(l => l.locStatus === zone);
+  if (masq     !== 'all') list = list.filter(l => l.masqueradeLevel === masq);
+  if (district !== 'all') list = list.filter(l => l.district === district);
+  if (search) {
+    const q = search.toLowerCase();
+    list = list.filter(l =>
+      (l.title || l.slug).toLowerCase().includes(q) ||
+      (l.subtype      || '').toLowerCase().includes(q) ||
+      (l.district     || '').toLowerCase().includes(q) ||
+      (l.neighborhood || '').toLowerCase().includes(q) ||
+      (l.address      || '').toLowerCase().includes(q)
+    );
+  }
+
+  document.getElementById('locations-sub').textContent = `${list.length} локаций`;
+
+  const grid = document.getElementById('locs-grid');
+  if (!list.length) {
+    grid.innerHTML = '<div class="loading-state" style="height:100px">Локации не найдены</div>';
+    return;
+  }
+  grid.innerHTML = list.map((loc, i) =>
+    _locCardHtml(loc, { delay: `style="animation-delay:${Math.min(i, 12) * 30}ms"` })
+  ).join('');
+  fitLocTitles();
+}
+
+// Карточка локации (`.loc-card`) — общий источник разметки для главной сетки
+// локаций И для «Связанных локаций» на странице модуля (см. _renderModuleLocPanel),
+// чтобы вторая не превращалась в отдельный обеднённый список-строку.
+function _locCardHtml(loc, { delay = '', overlayExtra = '' } = {}) {
+  const dLvl  = zoneDangerLevel(loc.dangerLevel);
+  const mLvl  = loc.masqueradeLevel || 'unknown';
+  // Компактные бейджи (2026-08-06, план «карточка локации» §1-2): только иконка + цвет
+  // заливки/рамки — «Зона контроля» (zoneBadge) убрана с карточки целиком (осталась
+  // только в детальной модалке), «Опасность»/«Маскарад» показывают полный текст по title,
+  // не в самом бейдже — на компактной сетке карточек полные подписи не помещались.
+  const dangerBadge = dLvl !== 'unknown'
+    ? `<span class="badge badge-danger-${dLvl}" title="${escAttr(DANGER_BADGE_LABELS[dLvl])}">⚔️</span>`
+    : '';
+  const masqBadge = mLvl !== 'unknown'
+    ? `<span class="badge badge-masq-${mLvl}" title="${escAttr(MASQ_BADGE_LABELS[mLvl])}">🎭</span>`
+    : '';
+
+  const distLine = [loc.district, loc.neighborhood].filter(Boolean).map(escHtml).join(' · ');
+  const cardTitle = loc.subtype || loc.title || loc.slug;
+  const textBlock = `
+    <div class="loc-title">${escHtml(cardTitle)}</div>
+    ${distLine    ? `<div class="loc-district">${distLine}</div>` : ''}
+    ${loc.address ? `<div class="loc-address">${escHtml(loc.address)}</div>` : ''}
+    <div class="loc-badges">${dangerBadge}${masqBadge}</div>`;
+  // Иконка удаления — всегда видима (не hover-reveal, см. план §2.1 — деструктивное
+  // действие с подтверждением, прятать её не даёт защиты, только вредит на touch).
+  // Клик обрабатывается делегатом (см. ниже, data-del-loc) — stopPropagation там же,
+  // чтобы не открывать карточку одновременно с удалением.
+  const delBtn = `<button type="button" class="loc-card-del-btn" data-del-loc="${escHtml(loc.slug)}" title="Удалить локацию" aria-label="Удалить локацию">🗑</button>`;
+
+  if (loc.imageUrl) {
+    return `<div class="loc-card has-art" data-slug="${escHtml(loc.slug)}" ${delay}>
+      <img class="loc-card-img" src="${loc.imageUrl}" alt="${escHtml(loc.title || loc.slug)}" loading="lazy" decoding="async">
+      <div class="loc-card-overlay">${textBlock}</div>
+      ${delBtn}
+      ${overlayExtra}
+    </div>`;
+  }
+  return `<div class="loc-card" data-slug="${escHtml(loc.slug)}" ${delay}>
+    <span class="loc-zone-icon">📍</span>
+    ${textBlock}
+    ${delBtn}
+    ${overlayExtra}
+  </div>`;
+}
+
+function fitLocTitles() {
+  document.querySelectorAll('.loc-card .loc-title').forEach(el => {
+    el.style.fontSize = '';
+    const fs  = parseFloat(getComputedStyle(el).fontSize);
+    const lh  = parseFloat(getComputedStyle(el).lineHeight) || fs * 1.2;
+    const max = lh * 2 + 2; // 2 строки + 2px буфер
+    if (el.scrollHeight <= max) return;
+
+    // Binary search the largest 0.5px-stepped size in [13, fs] that fits —
+    // same result as the old linear shrink loop, far fewer forced reflows
+    // (impeccable audit 2026-07-12: O(log n) reads instead of O(n) per card).
+    let lo = 13, hi = fs, best = 13;
+    while (hi - lo > 0.5) {
+      const mid = Math.round((lo + hi) / 2 * 2) / 2; // snap to .5px steps
+      el.style.fontSize = mid + 'px';
+      if (el.scrollHeight <= max) { best = mid; lo = mid; }
+      else { hi = mid; }
+    }
+    el.style.fontSize = best + 'px';
+  });
+}
+
+let _currentLocSlug = null;
+
+// ── Sensory palette — per-channel edit/generate (см. модульный сценарий по разделам) ──
+// Зеркалит формат таблицы, которую строит/читает parseLocation (lib/parsers.js):
+// `| **Канал** | значение |` без заголовка/разделителя — те парсятся отдельно,
+// но отбрасываются как строки с пустым value, поэтому здесь не нужны вовсе.
+function _sensRebuildTable(list) {
+  return (list || []).map(s => `| **${s.channel}** | ${s.value || ''} |`).join('\n');
+}
+
+// Обязательные каналы (§C3, техспека 2026-08-04) — Свет/Звук/Запах нельзя удалить
+// из детальной модалки (кнопки нет вовсе, не просто дизейблена); backend дублирует
+// запрет на PUT /fields (routes/locations.js, key==='sensoryPalette') — не полагаемся
+// только на скрытую кнопку. «Тактильное» и произвольные добавленные каналы остаются
+// удаляемыми, статус-кво (loc-plan §2.3).
+const MANDATORY_SENS_CHANNELS = ['Свет', 'Звук', 'Запах'];
+
+function _renderSensPanel(loc) {
+  const DEFAULT_CHANNELS = ['Свет', 'Звук', 'Запах', 'Тактильное'];
+  const list = loc.sensoryPalette?.length
+    ? loc.sensoryPalette
+    : DEFAULT_CHANNELS.map(channel => ({ channel, value: '' }));
+
+  const sectionsHtml = list.map((s, i) => {
+    const mandatory = MANDATORY_SENS_CHANNELS.includes(s.channel);
+    // Пустой обязательный канал — ⚠️, не нейтральное «Пусто»: незаполненность видна
+    // сразу, не открывая вкладку (тот же принцип, что маркер на кнопке вкладки ниже).
+    const emptyView = mandatory ? '<div class="cdet-empty">⚠️ Не заполнено</div>' : '<div class="cdet-empty">Пусто</div>';
+    return `
+    <div class="modp-scenario-section">
+      <div class="modp-section-header-row">
+        <div class="modp-section-label">${escHtml(s.channel)}</div>
+        <div class="modp-scenario-sec-btns">
+          <button class="cdet-edit-btn" data-editloc="sens-${i}">✏ Редактировать</button>
+          <button class="cdet-edit-btn" data-sens-regen="${i}">🪄 Сгенерировать</button>
+          ${mandatory ? '' : `<button class="hooks-del-btn" data-sens-del="${i}" title="Удалить канал">✕</button>`}
+        </div>
+      </div>
+      <div id="locdet-sens-${i}-view">${s.value ? escHtml(s.value) : emptyView}</div>
+      <div id="locdet-sens-${i}-edit" style="display:none">
+        <textarea class="cdet-edit-textarea" id="locdet-sens-${i}-ta" rows="2">${escHtml(s.value || '')}</textarea>
+      </div>
+      <div class="cdet-edit-bar" id="locdet-sens-${i}-bar" style="display:none">
+        <button class="cdet-save-btn" data-saveloc="sens-${i}">Сохранить</button>
+        <button class="cdet-cancel-btn" data-cancelloc="sens-${i}">Отмена</button>
+        <span class="cdet-save-msg" id="locdet-sens-${i}-msg" style="display:none">✓ Сохранено</span>
+      </div>
+    </div>
+    ${i < list.length - 1 ? '<div class="modp-section-divider"></div>' : ''}`;
+  }).join('');
+
+  return `
+    <div id="locdet-sens-list">${sectionsHtml}</div>
+    <div class="hooks-add-row" id="locdet-sens-add-row" style="display:none;flex-direction:column;gap:6px;margin-top:12px">
+      <input class="hooks-input" id="locdet-sens-new-channel" placeholder="Название канала (напр. Вкус)">
+      <textarea class="cdet-edit-textarea" id="locdet-sens-new-value" rows="2" placeholder="Значение…"></textarea>
+      <div style="display:flex;gap:6px">
+        <button class="cdet-save-btn" id="locdet-sens-add-confirm">Добавить</button>
+        <button class="cdet-cancel-btn" id="locdet-sens-add-cancel">Отмена</button>
+      </div>
+    </div>
+    <button class="hooks-add-btn" id="locdet-sens-add-btn" style="margin-top:10px">+ Добавить канал</button>`;
+}
+
+async function _locReloadSensTab(slug) {
+  const data = await fetch(`/api/locations${window.location.search}`).then(r => r.json()).catch(() => null);
+  if (data) { STATE.locations = data; openLocDetail(slug, 'sens'); }
+}
+
+async function _locRegenSensChannel(idx) {
+  const slug = _currentLocSlug;
+  const loc  = STATE.locations.find(l => l.slug === slug);
+  if (!loc) return;
+  const list = loc.sensoryPalette?.length
+    ? loc.sensoryPalette
+    : ['Свет', 'Звук', 'Запах', 'Тактильное'].map(channel => ({ channel, value: '' }));
+  const channel = list[idx]?.channel;
+  if (!channel) return;
+
+  const ok = await showConfirm(`Перегенерировать канал «${channel}»? Текущее значение будет заменено.`, { confirmText: 'Перегенерировать' });
+  if (!ok) return;
+
+  const btn = document.querySelector(`[data-sens-regen="${idx}"]`);
+  const origLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Генерирую…'; }
+  try {
+    const r = await fetch(`/api/locations/generate${window.location.search}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug, name: loc.title || slug, field: 'sensory', channel, context: loc.atmosphere || '' })
+    });
+    const result = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(result.error || 'Ошибка генерации');
+
+    const updated = list.slice();
+    updated[idx] = { ...updated[idx], value: result.value || '' };
+    const resp = await fetch(`/api/locations/${encodeURIComponent(slug)}/fields${window.location.search}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { sensoryPalette: _sensRebuildTable(updated) } })
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    await _locReloadSensTab(slug);
+  } catch (err) {
+    showToast('Не удалось перегенерировать канал: ' + err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+  }
+}
+
+async function _locDeleteSensChannel(idx) {
+  const slug = _currentLocSlug;
+  const loc  = STATE.locations.find(l => l.slug === slug);
+  if (!loc?.sensoryPalette?.length) return;
+  const channel = loc.sensoryPalette[idx]?.channel;
+  if (!channel) return;
+
+  const ok = await showConfirm(`Удалить канал «${channel}»?`, { danger: true, confirmText: 'Удалить' });
+  if (!ok) return;
+
+  const updated = loc.sensoryPalette.slice();
+  updated.splice(idx, 1);
+  try {
+    const resp = await fetch(`/api/locations/${encodeURIComponent(slug)}/fields${window.location.search}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { sensoryPalette: _sensRebuildTable(updated) } })
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    await _locReloadSensTab(slug);
+  } catch {
+    showToast('Не удалось удалить канал', 'error');
+  }
+}
+
+async function _locAddSensChannel() {
+  const slug = _currentLocSlug;
+  const loc  = STATE.locations.find(l => l.slug === slug);
+  if (!loc) return;
+  const nameEl  = document.getElementById('locdet-sens-new-channel');
+  const valueEl = document.getElementById('locdet-sens-new-value');
+  const channel = (nameEl?.value || '').trim();
+  const value   = (valueEl?.value || '').trim();
+  if (!channel) { nameEl?.focus(); return; }
+  if (!value)   { showToast('Заполни значение — иначе канал не сохранится', 'error'); valueEl?.focus(); return; }
+
+  const list = loc.sensoryPalette?.length
+    ? loc.sensoryPalette
+    : ['Свет', 'Звук', 'Запах', 'Тактильное'].map(c => ({ channel: c, value: '' }));
+  if (list.some(s => s.channel.toLowerCase() === channel.toLowerCase())) {
+    showToast('Такой канал уже есть', 'error');
+    return;
+  }
+  const updated = [...list, { channel, value }];
+  try {
+    const resp = await fetch(`/api/locations/${encodeURIComponent(slug)}/fields${window.location.search}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { sensoryPalette: _sensRebuildTable(updated) } })
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    await _locReloadSensTab(slug);
+  } catch {
+    showToast('Не удалось добавить канал', 'error');
+  }
+}
+
+function openLocDetail(slug, keepTab) {
+  const loc = STATE.locations.find(l => l.slug === slug);
+  if (!loc) return;
+  _currentLocSlug = slug;
+
+  const mLvl = loc.masqueradeLevel || 'unknown';
+  const dLvl = zoneDangerLevel(loc.dangerLevel);
+
+  const imgCol = loc.imageUrl
+    ? `<div class="locdet-carousel" id="locdet-carousel">
+        <img class="locdet-carousel-img" id="locdet-carousel-img" src="${loc.imageUrl}" alt="${escHtml(loc.title || loc.slug)}">
+        <div class="locdet-carousel-overlay" id="locdet-carousel-overlay"></div>
+        <button class="locdet-carousel-btn prev" id="locdet-carousel-prev" title="Предыдущее">&#8249;</button>
+        <button class="locdet-carousel-btn next" id="locdet-carousel-next" title="Следующее">&#8250;</button>
+        <div class="locdet-carousel-dots" id="locdet-carousel-dots"></div>
+       </div>`
+    : `<div class="locdet-no-img">📍</div>`;
+
+  // ── Panels content ────────────────────────────────────────────
+
+  const metaFields = [
+    ['subtype',      'Название',              loc.subtype],
+    ['district',     'Район',                 loc.district],
+    ['neighborhood', 'Дополнение к адресу',   loc.neighborhood],
+    ['address',      'Адрес',                 loc.address],
+    ['control',      'Контроль',              loc.control],
+  ];
+  const metaViewHtml = `<div class="locdet-table">${
+    metaFields.filter(([, , v]) => v).map(([, k, v]) =>
+      `<div class="locdet-row"><div class="locdet-key">${escHtml(k)}${fieldTip(LOCATION_FIELD_TIPS[k])}</div><div class="locdet-val">${escHtml(v)}</div></div>`).join('')
+  }</div>`;
+  // «Район» (district) — не обычное текстовое поле: выбор из уже существующих
+  // районов (тот же #loc-district-list datalist, что и в модалке создания/
+  // редактирования локации) + кнопка открепления (техспека 2026-08-05, Часть
+  // IV). Сохраняется отдельным путём от остальных полей meta — см. _locSavePanel.
+  const metaEditHtml = `<div class="locdet-edit-fields">${metaFields.map(([key, label, val]) => key === 'district'
+    ? `<div class="locdet-field-row">
+         <label class="locdet-field-lbl">${escHtml(label)}${fieldTip(LOCATION_FIELD_TIPS[label])}</label>
+         <div class="locdet-district-row">
+           <input class="form-control locdet-field-inp" id="locdet-meta-district" value="${escHtml(val || '')}" placeholder="${escHtml(label)}" list="loc-district-list" autocomplete="off">
+           <button type="button" class="chr-modal-btn danger" id="locdet-meta-district-clear" title="Открепить от района">✕</button>
+         </div>
+       </div>`
+    : `<div class="locdet-field-row">
+       <label class="locdet-field-lbl">${escHtml(label)}${fieldTip(LOCATION_FIELD_TIPS[label])}</label>
+       <input class="form-control locdet-field-inp" id="locdet-meta-${key}" value="${escHtml(val || '')}" placeholder="${escHtml(label)}">
+     </div>`).join('')}</div>`;
+
+  const atmViewHtml = loc.atmosphere
+    ? `<div class="locdet-atm">${escHtml(loc.atmosphere)}</div>`
+    : '<div class="cdet-empty">Описание не заполнено</div>';
+  const atmEditHtml = `<textarea class="cdet-edit-textarea" id="locdet-atm-ta" rows="12">${escHtml(loc.atmosphere || '')}</textarea>`;
+
+  const vtmSections = [
+    ['Статус',            loc.locStatus],
+    [loc.privateDomain ? 'Хозяин' : 'Фракция', loc.faction],
+    ['Постоянные фигуры', loc.figures],
+    ['Угрозы',            loc.threats],
+    ['Маскарад',          loc.masquerade],
+    ['Опасность',         DANGER_BADGE_LABELS[zoneDangerLevel(loc.dangerLevel)] || ''],
+  ].filter(([, v]) => v);
+  const vtmParts = [];
+  if (loc.vtmText) vtmParts.push(`<div class="locdet-atm">${escHtml(loc.vtmText)}</div>`);
+  vtmSections.forEach(([k, v]) => vtmParts.push(
+    `<div class="vtm-section"><div class="vtm-lbl">${escHtml(k)}${fieldTip(LOCATION_FIELD_TIPS[k])}</div><div class="vtm-body">${escHtml(v)}</div></div>`
+  ));
+  const vtmViewHtml = vtmParts.length
+    ? vtmParts.join('<div class="diary-divider"></div>')
+    : '<div class="cdet-empty">Контекст не заполнен</div>';
+  // Форма по полям (не пустая textarea) — переиспользует locdet-field-row/-lbl/-inp,
+  // тот же паттерн, что уже использует соседняя вкладка «Метаданные» (metaEditHtml выше),
+  // designspec §11.3. Маскарад — единственное поле как <select> (3 уровня, тот же
+  // паттерн, что «Опасность» в форме редактирования), остальные — свободный текст.
+  const VTM_MASQ_OPTS = [['', '—'], ['🟢', '🟢 Низкий'], ['🟡', '🟡 Средний'], ['🔴', '🔴 Высокий']];
+  const maqRaw = loc.masquerade || '';
+  const maqSelVal = VTM_MASQ_OPTS.find(([v]) => v && maqRaw.includes(v))?.[0] || '';
+  const VTM_DANGER_OPTS = [['', '—'], ['🟢', '🟢 Низкая'], ['🟡', '🟡 Средняя'], ['🔴', '🔴 Высокая']];
+  const dangerRaw = loc.dangerLevel || '';
+  const dangerSelVal = VTM_DANGER_OPTS.find(([v]) => v && dangerRaw.includes(v))?.[0] || '';
+  // «Частный домен» (§3.4) — переключает лейбл/даталист поля «Фракция» ↔ «Хозяин».
+  // Начальное состояние строится здесь (не только через change-обработчик), чтобы уже
+  // сохранённая карточка с privateDomain: true открывалась сразу в режиме «Хозяин».
+  const factionLbl  = loc.privateDomain ? 'Хозяин' : 'Фракция';
+  const factionList = loc.privateDomain ? 'locdet-owner-chars-list' : 'locdet-factions-list';
+  const vtmEditHtml = `<div class="locdet-edit-fields">
+      <div class="locdet-field-row">
+        <label class="locdet-field-lbl">Статус${fieldTip(LOCATION_FIELD_TIPS['Статус'])}</label>
+        <select class="form-control locdet-field-inp" id="locdet-vtm-status">
+          <option value=""${!loc.locStatus ? ' selected' : ''}>—</option>
+          ${CITY_LOCATION_TYPES.map(t => `<option value="${escAttr(t)}"${t === loc.locStatus ? ' selected' : ''}>${escHtml(t)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="locdet-field-row">
+        <label class="locdet-field-lbl" id="locdet-vtm-faction-lbl">${factionLbl}${fieldTip(LOCATION_FIELD_TIPS[factionLbl])}</label>
+        <div class="locdet-faction-row">
+          <input class="form-control locdet-field-inp" id="locdet-vtm-faction" list="${factionList}" value="${escAttr(loc.faction || '')}" placeholder="${factionLbl}" autocomplete="off">
+          <label class="locdet-checkbox-row"><input type="checkbox" id="locdet-vtm-private-domain"${loc.privateDomain ? ' checked' : ''}>Частный домен${fieldTip(LOCATION_FIELD_TIPS['Частный домен'])}</label>
+        </div>
+        <datalist id="locdet-factions-list"></datalist>
+        <datalist id="locdet-owner-chars-list"></datalist>
+      </div>
+      <div class="locdet-field-row">
+        <label class="locdet-field-lbl">Постоянные фигуры${fieldTip(LOCATION_FIELD_TIPS['Постоянные фигуры'])}</label>
+        <input class="form-control locdet-field-inp" id="locdet-vtm-figures" value="${escAttr(loc.figures || '')}" placeholder="Постоянные фигуры">
+      </div>
+      <div class="locdet-field-row">
+        <label class="locdet-field-lbl">Угрозы${fieldTip(LOCATION_FIELD_TIPS['Угрозы'])}</label>
+        <input class="form-control locdet-field-inp" id="locdet-vtm-threats" value="${escAttr(loc.threats || '')}" placeholder="Угрозы">
+      </div>
+      <div class="locdet-field-row">
+        <label class="locdet-field-lbl">Маскарад${fieldTip(LOCATION_FIELD_TIPS['Маскарад'])}</label>
+        <select class="form-control locdet-field-inp" id="locdet-vtm-masquerade">
+          ${VTM_MASQ_OPTS.map(([v, label]) => `<option value="${v}"${v === maqSelVal ? ' selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="locdet-field-row">
+        <label class="locdet-field-lbl">Опасность${fieldTip(LOCATION_FIELD_TIPS['Опасность'])}</label>
+        <select class="form-control locdet-field-inp" id="locdet-vtm-danger">
+          ${VTM_DANGER_OPTS.map(([v, label]) => `<option value="${v}"${v === dangerSelVal ? ' selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="cdet-section-title" style="margin:10px 0 6px">Описание (проза)</div>
+    <textarea class="cdet-edit-textarea" id="locdet-vtm-ta" rows="8">${escHtml(loc.vtmText || '')}</textarea>`;
+
+  const keyPointsHtml = loc.keyPoints?.length
+    ? `<div class="locdet-table">${loc.keyPoints.map(kp =>
+        `<div class="locdet-row">
+          <div class="locdet-key">${escHtml(kp.place)}</div>
+          <div class="locdet-val">${escHtml(kp.desc)}</div>
+        </div>`).join('')}</div>`
+    : '<div class="cdet-empty">Ключевые точки не заполнены</div>';
+  // Форма по 2 полям вместо raw-textarea (§C1, тот же паттерн, что уже применён к
+  // «Крючкам» рядом — hooks-item/hooks-input/hooks-del-btn переиспользуются как есть,
+  // здесь просто два .hooks-input в строке вместо одного). Место/Описание — реальные
+  // ячейки markdown-таблицы (не список), поэтому «|» внутри значений сворачиваем в
+  // лукалайк ∣, иначе стороннее значение сдвинуло бы соседнюю колонку при следующем
+  // разборе — тот же приём, что уже применяют vtmTable/subtype (routes/locations.js).
+  const keyEditHtml = `
+    <div id="locdet-keys-edit-list">
+      ${(loc.keyPoints || []).map(kp => `
+        <div class="hooks-item">
+          <input class="hooks-input keypt-place-inp" value="${escAttr(kp.place)}" placeholder="Место…">
+          <input class="hooks-input keypt-desc-inp" value="${escAttr(kp.desc)}" placeholder="Описание…">
+          <button class="hooks-del-btn" title="Удалить">✕</button>
+        </div>`).join('')}
+    </div>
+    <button class="hooks-add-btn" id="locdet-keys-add">+ Добавить точку</button>`;
+
+  const sensPanelHtml = _renderSensPanel(loc);
+  // Маркер на кнопке вкладки — незаполненность видна без захода на вкладку (§C3).
+  // Каналов, которых в карточке нет вовсе (алиасы «Зрение» и т.п., см. комментарий
+  // у MANDATORY_SENS_CHANNELS), это тоже засчитывает как «не заполнено» — корректно,
+  // раз обязательного канала под этим именем на самом деле нет.
+  const sensHasEmpty = MANDATORY_SENS_CHANNELS.some(ch => {
+    const found = loc.sensoryPalette?.find(s => s.channel === ch);
+    return !found?.value;
+  });
+
+  const hooksViewHtml = loc.hooks?.length
+    ? `<div class="locdet-hooks">${loc.hooks.map((h, i) =>
+        `<div class="locdet-hook">
+          <span class="locdet-hook-num">${i + 1}</span>
+          <span class="locdet-hook-text">${escHtml(h)}</span>
+        </div>`).join('')}</div>`
+    : '<div class="cdet-empty">Крючки не заполнены</div>';
+  const hooksEditHtml = `
+    <div id="locdet-hooks-edit-list">
+      ${(loc.hooks || []).map((h, i) => `
+        <div class="hooks-item">
+          <span class="hooks-num">${i + 1}</span>
+          <input class="hooks-input" value="${escHtml(h)}" placeholder="Текст крючка…">
+          <button class="hooks-del-btn" title="Удалить">✕</button>
+        </div>`).join('')}
+    </div>
+    <button class="hooks-add-btn" id="locdet-hooks-add">+ Добавить крючок</button>`;
+
+  // ── Images tab ────────────────────────────────────────────────
+  const images = loc.imageUrls || (loc.imageUrl ? [loc.imageUrl] : []);
+  const galleryHtml = images.length
+    ? `<div class="locdet-img-gallery">${images.map(u =>
+        `<img class="locdet-thumb" src="${escHtml(u)}" alt="" loading="lazy" decoding="async">`).join('')}</div>`
+    : '<div class="cdet-empty" style="margin-bottom:12px">Изображения не загружены</div>';
+
+  // ── Helper: panel with edit button ────────────────────────────
+  function editPanel(id, viewHtml, editHtml, opts = {}) {
+    const { noEdit } = opts;
+    return `
+      <div class="cdet-info-header">
+        ${!noEdit ? `<button class="cdet-edit-btn" data-editloc="${id}">✏ Редактировать</button>` : ''}
+      </div>
+      <div id="locdet-${id}-view">${viewHtml}</div>
+      <div id="locdet-${id}-edit" style="display:none">${editHtml}</div>
+      <div class="cdet-edit-bar" id="locdet-${id}-bar" style="display:none">
+        <button class="cdet-save-btn" data-saveloc="${id}">Сохранить</button>
+        <button class="cdet-cancel-btn" data-cancelloc="${id}">Отмена</button>
+        <span class="cdet-save-msg" id="locdet-${id}-msg" style="display:none">✓ Сохранено</span>
+      </div>`;
+  }
+
+  document.getElementById('loc-detail-content').innerHTML = `
+    <div class="locdet-img-col">${imgCol}</div>
+    <div class="cdet-info-col">
+      <div class="cdet-sticky-header">
+        <div class="cdet-name">${escHtml(loc.title || loc.slug)}</div>
+        ${loc.subtype ? `<div class="locdet-subtype">${escHtml(loc.subtype)}</div>` : ''}
+        <button class="cdet-edit-btn" id="locdet-open-edit-modal" data-slug="${escHtml(slug)}" style="margin-bottom:6px">✏ Редактировать / Генерация</button>
+        <button class="cdet-edit-btn locdet-delete-btn" id="locdet-delete-btn" data-slug="${escHtml(slug)}" style="margin-bottom:6px">🗑 Удалить</button>
+        <div class="locdet-legend-row">
+          <div class="locdet-legend-item">
+            <span class="locdet-legend-lbl">Статус</span>
+            <span class="badge badge-status-${_statusClass(loc.locStatus)}">${loc.locStatus ? escHtml(loc.locStatus.toUpperCase()) : '—'}</span>
+          </div>
+          ${dLvl !== 'unknown' ? `<div class="locdet-legend-item">
+            <span class="locdet-legend-lbl">Уровень опасности</span>
+            <span class="badge badge-danger-${dLvl}">${DANGER_BADGE_LABELS[dLvl]}</span>
+          </div>` : ''}
+          ${mLvl !== 'unknown' ? `<div class="locdet-legend-item">
+            <span class="locdet-legend-lbl">Маскарад</span>
+            <span class="badge badge-masq-${mLvl}">${MASQ_BADGE_LABELS[mLvl]}</span>
+          </div>` : ''}
+        </div>
+      </div>
+      <div class="cdet-tab-bar">
+        <button class="cdet-tab active" data-tab="meta">Метаданные</button>
+        <button class="cdet-tab" data-tab="atm">Атмосфера</button>
+        <button class="cdet-tab" data-tab="vtm">VtM</button>
+        <button class="cdet-tab" data-tab="sens">Сенсорика${sensHasEmpty ? ' ⚠️' : ''}</button>
+        <button class="cdet-tab" data-tab="keys">Ключевые точки</button>
+        <button class="cdet-tab" data-tab="hooks">Крючки</button>
+        <button class="cdet-tab" data-tab="images">🖼 Изображения</button>
+      </div>
+      <div class="cdet-panels">
+        <div class="cdet-panel active" data-panel="meta">${editPanel('meta', metaViewHtml, metaEditHtml)}</div>
+        <div class="cdet-panel" data-panel="atm">${editPanel('atm', atmViewHtml, atmEditHtml)}</div>
+        <div class="cdet-panel" data-panel="vtm">${editPanel('vtm', vtmViewHtml, vtmEditHtml)}</div>
+        <div class="cdet-panel" data-panel="sens">${sensPanelHtml}</div>
+        <div class="cdet-panel" data-panel="keys">${editPanel('keys', keyPointsHtml, keyEditHtml)}</div>
+        <div class="cdet-panel" data-panel="hooks">${editPanel('hooks', hooksViewHtml, hooksEditHtml)}</div>
+        <div class="cdet-panel" data-panel="images">
+          ${galleryHtml}
+          <div class="cdet-upload-row">
+            <button class="cdet-upload-btn" id="locdet-upload-btn" data-slug="${escHtml(slug)}">📷 Загрузить изображение</button>
+            <span id="locdet-upload-msg" class="cdet-save-msg" style="display:none">✓ Загружено</span>
+          </div>
+          <div class="cdet-section-title" style="margin-top:16px">Промт для генерации (GPT / DALL-E 3)</div>
+          <textarea class="cdet-prompt-box" id="locdet-img-prompt-ta">${escHtml(loc.imagePrompt || '')}</textarea>
+          <div class="cdet-section-title" style="margin-top:12px">Негативный промт (SD / Flux)</div>
+          <textarea class="cdet-prompt-box cdet-prompt-neg" id="locdet-img-neg-ta">${escHtml(loc.negativePrompt || '')}</textarea>
+          <div class="cdet-edit-bar" style="margin-top:8px;display:flex">
+            <button class="cdet-save-btn" data-saveloc="images">Сохранить промты</button>
+            <span class="cdet-save-msg" id="locdet-images-msg" style="display:none">✓ Сохранено</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  openModal('loc-detail-modal');
+  if (loc.imageUrl) initLocCarousel(slug);
+
+  if (keepTab) {
+    const tab = document.querySelector(`#loc-detail-content .cdet-tab[data-tab="${keepTab}"]`);
+    if (tab) tab.click();
+  }
+}
+
+// Location card clicks
+document.getElementById('locs-grid').addEventListener('click', e => {
+  const delBtn = e.target.closest('.loc-card-del-btn');
+  if (delBtn) { deleteLoc(delBtn.dataset.delLoc); return; }
+  const card = e.target.closest('.loc-card[data-slug]');
+  if (card) openLocDetail(card.dataset.slug);
+});
+
+document.getElementById('btn-export-locs')?.addEventListener('click', e => {
+  e.preventDefault();
+  window.location.href = `/api/export/locations${window.location.search}`;
+});
+document.getElementById('btn-import-locs')?.addEventListener('click', e => {
+  e.preventDefault();
+  document.getElementById('import-locs-file')?.click();
+});
+document.getElementById('import-locs-file')?.addEventListener('change', async e => {
+  const file = e.target.files[0];
+  await importCardsFromFile('locations', file, loadLocations);
+  e.target.value = '';
+});
+
+// Location filter events
+document.getElementById('loc-search').addEventListener('input', e => {
+  STATE.locFilter.search = e.target.value;
+  if (STATE.locations.length) renderLocations();
+});
+document.getElementById('loc-filter-zone').addEventListener('change', e => {
+  STATE.locFilter.zone = e.target.value;
+  if (STATE.locations.length) renderLocations();
+});
+document.getElementById('loc-filter-district').addEventListener('change', e => {
+  STATE.locFilter.district = e.target.value;
+  if (STATE.locations.length) renderLocations();
+});
+document.getElementById('loc-filter-masq').addEventListener('change', e => {
+  STATE.locFilter.masq = e.target.value;
+  if (STATE.locations.length) renderLocations();
+});
+
+// Location modal close
+const locDetailModal = document.getElementById('loc-detail-modal');
+document.getElementById('loc-detail-close').addEventListener('click', () => {
+  closeModal('loc-detail-modal');
+  if (_locCarouselTimer) { clearInterval(_locCarouselTimer); _locCarouselTimer = null; }
+});
+locDetailModal.addEventListener('click', e => { if (e.target === locDetailModal) closeModal('loc-detail-modal'); });
+
+// Tab switching + carousel + edit/save/cancel + upload in location modal
+document.getElementById('loc-detail-content').addEventListener('click', e => {
+  if (e.target.closest('#locdet-carousel-prev')) { _locCarouselGoTo(_locCarouselIdx - 1, true); return; }
+  if (e.target.closest('#locdet-carousel-next')) { _locCarouselGoTo(_locCarouselIdx + 1, true); return; }
+
+  // Сенсорная палитра — per-channel регенерация/удаление/добавление (проверяем
+  // раньше generic .hooks-del-btn ниже, т.к. кнопка удаления канала делит с ним класс).
+  const sensRegenBtn = e.target.closest('[data-sens-regen]');
+  if (sensRegenBtn) { _locRegenSensChannel(parseInt(sensRegenBtn.dataset.sensRegen, 10)); return; }
+  const sensDelBtn = e.target.closest('[data-sens-del]');
+  if (sensDelBtn) { _locDeleteSensChannel(parseInt(sensDelBtn.dataset.sensDel, 10)); return; }
+  if (e.target.closest('#locdet-sens-add-btn')) {
+    document.getElementById('locdet-sens-add-btn').style.display = 'none';
+    const row = document.getElementById('locdet-sens-add-row');
+    if (row) { row.style.display = 'flex'; document.getElementById('locdet-sens-new-channel')?.focus(); }
+    return;
+  }
+  if (e.target.closest('#locdet-sens-add-cancel')) {
+    document.getElementById('locdet-sens-add-row').style.display = 'none';
+    document.getElementById('locdet-sens-add-btn').style.display = '';
+    return;
+  }
+  if (e.target.closest('#locdet-sens-add-confirm')) { _locAddSensChannel(); return; }
+
+  if (e.target.closest('.hooks-del-btn')) {
+    const item = e.target.closest('.hooks-item');
+    if (item) { item.remove(); _renumberHooks(); }
+    return;
+  }
+  if (e.target.closest('#locdet-keys-add')) {
+    const list = document.getElementById('locdet-keys-edit-list');
+    if (list) {
+      const div = document.createElement('div');
+      div.className = 'hooks-item';
+      div.innerHTML = `<input class="hooks-input keypt-place-inp" placeholder="Место…"><input class="hooks-input keypt-desc-inp" placeholder="Описание…"><button class="hooks-del-btn" title="Удалить">✕</button>`;
+      list.appendChild(div);
+      div.querySelector('.keypt-place-inp')?.focus();
+    }
+    return;
+  }
+  if (e.target.closest('#locdet-hooks-add')) {
+    const list = document.getElementById('locdet-hooks-edit-list');
+    if (list) {
+      const n = list.querySelectorAll('.hooks-item').length + 1;
+      const div = document.createElement('div');
+      div.className = 'hooks-item';
+      div.innerHTML = `<span class="hooks-num">${n}</span><input class="hooks-input" placeholder="Текст крючка…"><button class="hooks-del-btn" title="Удалить">✕</button>`;
+      list.appendChild(div);
+      div.querySelector('.hooks-input').focus();
+    }
+    return;
+  }
+
+  const editBtn   = e.target.closest('[data-editloc]');
+  const saveBtn   = e.target.closest('[data-saveloc]');
+  const cancelBtn = e.target.closest('[data-cancelloc]');
+  const uploadBtn = e.target.closest('#locdet-upload-btn');
+
+  if (editBtn) {
+    _locToggleEdit(editBtn.dataset.editloc, true);
+    // Датаlist существующих районов — тот же источник, что и в модалке
+    // создания/редактирования локации, только здесь ему негде было
+    // populate'иться раньше (openLocEditModal туда не вызывалась).
+    if (editBtn.dataset.editloc === 'meta') _loadDistrictsList();
+    if (editBtn.dataset.editloc === 'vtm') { _loadCityFactionsList(); _fillOwnerCharsList(); }
+    return;
+  }
+  if (cancelBtn) { _locToggleEdit(cancelBtn.dataset.cancelloc, false); return; }
+  if (saveBtn)   { _locSavePanel(saveBtn.dataset.saveloc);           return; }
+  if (uploadBtn) { _locTriggerUpload(uploadBtn.dataset.slug);        return; }
+  if (e.target.closest('#locdet-meta-district-clear')) {
+    // Открепление — не пустая строка (PUT /district отклоняет её, 400 «Укажи
+    // район»), а явное значение «Другие», тот же фолбэк, что уже использует
+    // создание локации без указанного района.
+    const inp = document.getElementById('locdet-meta-district');
+    if (inp) { inp.value = 'Другие'; inp.focus(); }
+    return;
+  }
+
+  const tab = e.target.closest('.cdet-tab');
+  if (!tab) return;
+  const col = tab.closest('.cdet-info-col');
+  col.querySelectorAll('.cdet-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  col.querySelectorAll('.cdet-panel').forEach(p => p.classList.remove('active'));
+  col.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+  const panels = col.querySelector('.cdet-panels');
+  if (panels) panels.scrollTop = 0;
+});
+
+function _renumberHooks() {
+  document.querySelectorAll('#locdet-hooks-edit-list .hooks-item').forEach((item, i) => {
+    const num = item.querySelector('.hooks-num');
+    if (num) num.textContent = i + 1;
+  });
+}
+
+// §C1 — строки формы «Ключевые точки» обратно в markdown-таблицу. Пустой список
+// (не единственный случай — счищена и последняя строка) даёт тот же пустой шаблон,
+// что и _locCardTemplate/routes/locations.js, чтобы карточка визуально не отличалась
+// от только что созданной. «|» в значениях сворачивается в ∣ (см. комментарий у
+// keyEditHtml) — реальная таблица, не список, соседняя колонка иначе бы сдвинулась.
+function _collectLocDetKeyPoints() {
+  const esc = s => String(s).replace(/\|/g, '∣');
+  const rows = Array.from(document.querySelectorAll('#locdet-keys-edit-list .hooks-item'))
+    .map(item => ({
+      place: item.querySelector('.keypt-place-inp')?.value.trim() || '',
+      desc:  item.querySelector('.keypt-desc-inp')?.value.trim() || '',
+    }))
+    .filter(r => r.place || r.desc);
+  return rows.length
+    ? `| Место | Описание |\n|---|---|\n${rows.map(r => `| ${esc(r.place)} | ${esc(r.desc)} |`).join('\n')}`
+    : '| Место | Описание |\n|---|---|\n| | |';
+}
+
+function _locToggleEdit(panel, enter) {
+  const viewEl = document.getElementById(`locdet-${panel}-view`);
+  const editEl = document.getElementById(`locdet-${panel}-edit`);
+  const barEl  = document.getElementById(`locdet-${panel}-bar`);
+  const msgEl  = document.getElementById(`locdet-${panel}-msg`);
+  if (!viewEl || !editEl) return;
+  viewEl.style.display = enter ? 'none' : '';
+  editEl.style.display = enter ? '' : 'none';
+  if (barEl) barEl.style.display = enter ? 'flex' : 'none';
+  if (msgEl) msgEl.style.display = 'none';
+}
+
+async function _locSavePanel(panel) {
+  const slug = _currentLocSlug;
+  if (!slug) return;
+  const msgEl = document.getElementById(`locdet-${panel}-msg`);
+  const fields = {};
+
+  if (panel === 'atm') {
+    fields.atmosphere = document.getElementById('locdet-atm-ta')?.value || '';
+  } else if (panel === 'vtm') {
+    fields.vtmText = document.getElementById('locdet-vtm-ta')?.value || '';
+    fields.vtmTable = {
+      locStatus:  document.getElementById('locdet-vtm-status')?.value.trim() || '',
+      faction:    document.getElementById('locdet-vtm-faction')?.value.trim() || '',
+      figures:    document.getElementById('locdet-vtm-figures')?.value.trim() || '',
+      threats:    document.getElementById('locdet-vtm-threats')?.value.trim() || '',
+      masquerade: document.getElementById('locdet-vtm-masquerade')?.value || '',
+    };
+    // «Опасность»/«Частный домен» — обычные метаданные-бюллеты (**Label:**), НЕ строки
+    // VtM-таблицы — сохраняются отдельными полями verbatim, не через vtmTable
+    // (2026-08-06, план «карточка локации» §3.3-3.4).
+    fields.dangerLevel   = document.getElementById('locdet-vtm-danger')?.value || '';
+    fields.privateDomain = document.getElementById('locdet-vtm-private-domain')?.checked ? 'да' : '';
+  } else if (panel.startsWith('sens-')) {
+    const idx  = parseInt(panel.slice('sens-'.length), 10);
+    const val  = document.getElementById(`locdet-${panel}-ta`)?.value ?? '';
+    const loc  = STATE.locations.find(l => l.slug === slug);
+    const list = loc?.sensoryPalette?.length
+      ? loc.sensoryPalette.slice()
+      : ['Свет', 'Звук', 'Запах', 'Тактильное'].map(channel => ({ channel, value: '' }));
+    if (!list[idx]) return;
+    list[idx] = { ...list[idx], value: val };
+    fields.sensoryPalette = _sensRebuildTable(list);
+  } else if (panel === 'keys') {
+    fields.keyPoints = _collectLocDetKeyPoints();
+  } else if (panel === 'hooks') {
+    const hookInputs = document.querySelectorAll('#locdet-hooks-edit-list .hooks-input');
+    fields.hooks = Array.from(hookInputs).map(i => i.value.trim()).filter(Boolean).join('\n');
+  } else if (panel === 'meta') {
+    for (const key of ['subtype', 'neighborhood', 'address', 'control']) {
+      const el = document.getElementById(`locdet-meta-${key}`);
+      if (el) fields[key] = el.value;
+    }
+    // district — НЕ через общий PUT /fields (это только текст, папка не
+    // переезжает) — отдельный PUT /district ниже, физический перенос, тот
+    // же путь, что уже проверен _attachLocationToDistrict/
+    // _detachLocationFromDistrict (city.js). Меняем только если правда
+    // изменилось — не дёргать подтверждение на каждое сохранение meta.
+  } else if (panel === 'images') {
+    fields.imagePrompt    = document.getElementById('locdet-img-prompt-ta')?.value || '';
+    fields.negativePrompt = document.getElementById('locdet-img-neg-ta')?.value || '';
+  }
+
+  if (panel === 'meta') {
+    const districtInp = document.getElementById('locdet-meta-district');
+    const loc = STATE.locations.find(l => l.slug === slug);
+    const newDistrict = districtInp?.value.trim() || '';
+    const oldDistrict = loc?.district || '';
+    if (newDistrict && newDistrict !== oldDistrict) {
+      const ok = await showConfirm(
+        `Перенести локацию в район «${newDistrict}»? Папка локации физически переедет на диске.`,
+        { confirmText: 'Перенести' }
+      );
+      if (!ok) return;
+      try {
+        const r = await fetch(`/api/locations/${encodeURIComponent(slug)}/district${window.location.search}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ district: newDistrict }),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+      } catch (e) {
+        if (msgEl) { msgEl.textContent = '✗ ' + e.message; msgEl.style.display = ''; }
+        return;
+      }
+    }
+  }
+
+  try {
+    const resp = await fetch(`/api/locations/${encodeURIComponent(slug)}/fields${window.location.search}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields })
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+
+    if (msgEl) { msgEl.style.display = ''; setTimeout(() => { if (msgEl) msgEl.style.display = 'none'; }, 2500); }
+    if (panel !== 'images') _locToggleEdit(panel, false);
+
+    // Reload and re-render keeping current tab
+    const activeTab = document.querySelector('#loc-detail-content .cdet-tab.active')?.dataset.tab;
+    const data = await fetch(`/api/locations${window.location.search}`).then(r => r.json()).catch(() => null);
+    if (data) {
+      STATE.locations = data;
+      openLocDetail(slug, activeTab);
+    }
+  } catch {
+    if (msgEl) { msgEl.textContent = '✗ Ошибка'; msgEl.style.display = ''; }
+  }
+}
+
+
+function _locTriggerUpload(slug) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const msgEl = document.getElementById('locdet-upload-msg');
+    const btn   = document.getElementById('locdet-upload-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const ext  = file.name.split('.').pop() || 'jpg';
+      const resp = await fetch(`/api/locations/${encodeURIComponent(slug)}/upload-image${window.location.search}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, ext })
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const { url } = await resp.json();
+
+      if (msgEl) { msgEl.style.display = ''; setTimeout(() => { if (msgEl) msgEl.style.display = 'none'; }, 2500); }
+
+      // Reload and re-render
+      const data = await fetch(`/api/locations${window.location.search}`).then(r => r.json()).catch(() => null);
+      if (data) {
+        STATE.locations = data;
+        openLocDetail(slug, 'images');
+      }
+    } catch {
+      if (msgEl) { msgEl.textContent = '✗ Ошибка загрузки'; msgEl.style.display = ''; }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+  input.click();
+}
+
+let _locCarouselImages = [];
+let _locCarouselIdx    = 0;
+let _locCarouselTimer  = null;
+
+async function initLocCarousel(slug) {
+  if (_locCarouselTimer) { clearInterval(_locCarouselTimer); _locCarouselTimer = null; }
+  _locCarouselImages = [];
+  _locCarouselIdx = 0;
+
+  const resp = await fetch(`/api/locations/${encodeURIComponent(slug)}/images${window.location.search}`)
+    .catch(() => null);
+  if (!resp?.ok) return;
+  const { images } = await resp.json().catch(() => ({}));
+  if (!images || images.length <= 1) {
+    document.getElementById('locdet-carousel-prev')?.style.setProperty('display', 'none');
+    document.getElementById('locdet-carousel-next')?.style.setProperty('display', 'none');
+    return;
+  }
+
+  _locCarouselImages = images;
+  _locCarouselIdx    = 0;
+
+  const dotsEl = document.getElementById('locdet-carousel-dots');
+  if (dotsEl) {
+    dotsEl.innerHTML = images.map((_, i) =>
+      `<div class="locdet-carousel-dot${i === 0 ? ' active' : ''}"></div>`
+    ).join('');
+  }
+
+  _locCarouselTimer = setInterval(() => _locCarouselGoTo(_locCarouselIdx + 1), 60 * 1000);
+}
+
+function _locCarouselGoTo(targetIdx, resetTimer = false) {
+  const img     = document.getElementById('locdet-carousel-img');
+  const overlay = document.getElementById('locdet-carousel-overlay');
+  const dotsEl  = document.getElementById('locdet-carousel-dots');
+  if (!img || !overlay || !_locCarouselImages.length) {
+    clearInterval(_locCarouselTimer); _locCarouselTimer = null; return;
+  }
+
+  const next = ((targetIdx % _locCarouselImages.length) + _locCarouselImages.length) % _locCarouselImages.length;
+
+  overlay.classList.add('dimmed');
+  setTimeout(() => {
+    _locCarouselIdx = next;
+    img.src = _locCarouselImages[_locCarouselIdx];
+    if (dotsEl) {
+      dotsEl.querySelectorAll('.locdet-carousel-dot').forEach((d, i) =>
+        d.classList.toggle('active', i === _locCarouselIdx));
+    }
+    setTimeout(() => overlay.classList.remove('dimmed'), 300);
+  }, 2100);
+
+  if (resetTimer && _locCarouselTimer) {
+    clearInterval(_locCarouselTimer);
+    _locCarouselTimer = setInterval(() => _locCarouselGoTo(_locCarouselIdx + 1), 60 * 1000);
+  }
+}
+
+// ── Image Lightbox ───────────────────────────────────────────────────────────
+
+let _lbImages = [];
+let _lbIdx    = 0;
+
+function openLightbox(images, startIdx = 0) {
+  _lbImages = images;
+  _lbIdx    = startIdx;
+  _lbRender();
+  document.getElementById('img-lightbox').classList.add('open');
+}
+
+function _lbRender() {
+  const img     = document.getElementById('lightbox-img');
+  const counter = document.getElementById('lightbox-counter');
+  const prev    = document.getElementById('lightbox-prev');
+  const next    = document.getElementById('lightbox-next');
+  img.src       = _lbImages[_lbIdx];
+  counter.textContent = _lbImages.length > 1 ? `${_lbIdx + 1} / ${_lbImages.length}` : '';
+  prev.style.display  = _lbImages.length > 1 ? '' : 'none';
+  next.style.display  = _lbImages.length > 1 ? '' : 'none';
+}
+
+function _lbGo(delta) {
+  _lbIdx = ((_lbIdx + delta) % _lbImages.length + _lbImages.length) % _lbImages.length;
+  _lbRender();
+}
+
+(function _initLightbox() {
+  const lb   = document.getElementById('img-lightbox');
+  document.getElementById('lightbox-close').addEventListener('click', () => lb.classList.remove('open'));
+  document.getElementById('lightbox-prev').addEventListener('click',  () => _lbGo(-1));
+  document.getElementById('lightbox-next').addEventListener('click',  () => _lbGo(1));
+  lb.addEventListener('click', e => { if (e.target === lb) lb.classList.remove('open'); });
+  document.addEventListener('keydown', e => {
+    if (!lb.classList.contains('open')) return;
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); _lbGo(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); _lbGo(1); }
+    if (e.key === 'Escape')     lb.classList.remove('open');
+  });
+})();
+
+// Open lightbox: carousel image or gallery thumbnail
+document.getElementById('loc-detail-content').addEventListener('click', e => {
+  const carousel = e.target.closest('#locdet-carousel-img');
+  if (carousel) {
+    const images = _locCarouselImages.length ? _locCarouselImages : [carousel.src];
+    openLightbox(images, _locCarouselIdx);
+    return;
+  }
+  const thumb = e.target.closest('.locdet-thumb');
+  if (thumb) {
+    const loc = STATE.locations.find(l => l.slug === _currentLocSlug);
+    const imgs = (loc?.imageUrls) || (loc?.imageUrl ? [loc.imageUrl] : [thumb.src]);
+    const idx  = imgs.indexOf(thumb.src);
+    openLightbox(imgs, idx >= 0 ? idx : 0);
+  }
+}, true);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Location Edit / Create Modal
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _locEditSlug = null; // null = create, string = edit
+
+// prefilledDistrict: опциональное имя района — предзаполняет и дизейблит поле
+// «Район» (для встраивания модалки в блок «Район» формы создания/редактирования
+// города, где район уже определён контекстом вызова). Актуально только для
+// создания (slug=null); при редактировании существующей локации район всегда
+// остаётся редактируемым.
+function openLocEditModal(slug, prefilledDistrict) {
+  _locEditSlug = slug || null;
+  const title = document.getElementById('loc-edit-title');
+  const delBtn = document.getElementById('loc-edit-delete-btn');
+  const errDiv = document.getElementById('loc-edit-error');
+
+  title.textContent = slug ? 'Редактировать локацию' : 'Создать локацию';
+  delBtn.style.display = slug ? '' : 'none';
+  errDiv.style.display = 'none';
+  errDiv.textContent = '';
+  document.getElementById('loc-edit-gen-hint').textContent = '';
+
+  // Clear fields
+  ['name','district','neighborhood','address','control','atmosphere','vtm-context','hooks','image-prompt','context'].forEach(id => {
+    const el = document.getElementById(`loc-edit-${id}`);
+    if (el) el.value = '';
+  });
+  document.getElementById('loc-edit-danger').value = '';
+
+  const districtEl = document.getElementById('loc-edit-district');
+  districtEl.disabled = false;
+  if (!slug && prefilledDistrict) {
+    districtEl.value = prefilledDistrict;
+    districtEl.disabled = true;
+  }
+
+  if (slug) {
+    const loc = STATE.locations.find(l => l.slug === slug);
+    if (loc) {
+      document.getElementById('loc-edit-name').value        = loc.title || loc.subtype || loc.slug || '';
+      document.getElementById('loc-edit-district').value    = loc.district || '';
+      document.getElementById('loc-edit-neighborhood').value = loc.neighborhood || '';
+      document.getElementById('loc-edit-address').value     = loc.address || '';
+      document.getElementById('loc-edit-control').value     = loc.control || '';
+      document.getElementById('loc-edit-atmosphere').value  = loc.atmosphere || '';
+      document.getElementById('loc-edit-hooks').value       = (loc.hooks || []).join('\n');
+      document.getElementById('loc-edit-image-prompt').value = loc.imagePrompt || '';
+      document.getElementById('loc-edit-vtm-context').value = loc.vtmText || '';
+      // Опасность — отдельное поле (техспека §13.1), значение — тот же цветной кружок,
+      // что раньше жил внутри «Зоны».
+      const dv = loc.dangerLevel || '';
+      const dangerEl = document.getElementById('loc-edit-danger');
+      for (const opt of dangerEl.options) {
+        if (opt.value && dv.includes(opt.value)) { dangerEl.value = opt.value; break; }
+      }
+    }
+  }
+
+  // Populate factions datalist for the Control field
+  _loadFactionsList();
+  // Populate districts datalist for the Район field
+  _loadDistrictsList();
+
+  openModal('loc-edit-modal', '#loc-edit-name');
+}
+
+// GET /api/cities/:slug/districts — контракт из techspec (§2.4):
+// [{slug, name, type, sect, clan}]. Эндпоинт может ещё не существовать
+// (параллельная задача District-сущности) — 404/сетевая ошибка не должны
+// ломать модалку локации, район всё равно можно ввести вручную.
+async function _loadDistrictsList() {
+  const dl = document.getElementById('loc-district-list');
+  if (!dl) return;
+  dl.innerHTML = '';
+  try {
+    const r = await fetch(`/api/cities/${encodeURIComponent(CITY)}/districts`);
+    if (!r.ok) return; // 404 — эндпоинт ещё не реализован либо город не найден
+    const districts = await r.json();
+    if (!Array.isArray(districts)) return;
+    dl.innerHTML = districts
+      .map(d => (d && (d.name || d.slug) || '').trim())
+      .filter(Boolean)
+      .map(name => `<option value="${name.replace(/"/g, '&quot;')}">`)
+      .join('');
+  } catch { /* эндпоинт недоступен — молча, поле остаётся свободным текстом */ }
+}
+
+async function _loadFactionsList() {
+  const dl = document.getElementById('loc-control-list');
+  if (!dl) return;
+  try {
+    const md = await fetch(`/api/factions?city=${encodeURIComponent(CITY)}`).then(r => r.ok ? r.text() : '');
+    const factions = new Set();
+    for (const line of md.split('\n')) {
+      if (!line.startsWith('|') || /^[|\s-]+$/.test(line)) continue;
+      for (const cell of line.split('|').map(c => c.trim()).filter(Boolean)) {
+        if (cell.length > 1 && !/^(Должность|Персонаж|Клан|Примечание|Статус|Примечан)/.test(cell))
+          factions.add(cell);
+      }
+    }
+    dl.innerHTML = [...factions].map(f => `<option value="${f.replace(/"/g, '&quot;')}">`).join('');
+  } catch { /* молча */ }
+}
+
+// «Фракция» на VtM-вкладке детальной модалки (§3.2, план «карточка локации») — НЕ тот
+// же источник, что _loadFactionsList() выше (тот — /api/factions, «политический
+// ландшафт»; этот — секция «Фракции» city.md, тот же принцип, что дропдаун «Влияние —
+// Фракции» района, см. техспеку §7.2/§7.5 — расхождение источников отмечено, но не
+// устраняется в этой задаче).
+async function _loadCityFactionsList() {
+  const dl = document.getElementById('locdet-factions-list');
+  if (!dl) return;
+  try {
+    const list = await fetch(`/api/cities/${encodeURIComponent(CITY)}/factions-list`).then(r => r.ok ? r.json() : []);
+    dl.innerHTML = (Array.isArray(list) ? list : []).map(f => `<option value="${escAttr(f)}">`).join('');
+  } catch { /* автодополнение необязательно для работы поля */ }
+}
+// Даталист «Хозяин» (режим «Частный домен») — персонажи-вампиры уже загруженного
+// реестра города, доп. сетевой запрос не нужен (§3.4).
+function _fillOwnerCharsList() {
+  const dl = document.getElementById('locdet-owner-chars-list');
+  if (!dl) return;
+  const names = (STATE.characters || []).filter(c => c.lineage === 'vampire').map(c => c.name);
+  dl.innerHTML = names.map(n => `<option value="${escAttr(n)}">`).join('');
+}
+
+// Чекбокс «Частный домен» (§3.4) — переключает лейбл/даталист поля «Фракция» ↔
+// «Хозяин». Очищает поле при переключении (значение из одного режима семантически
+// невалидно в другом) — но только «со вспышкой», если реально было что чистить, и
+// только если там реально ЧТО-ТО было (дизайн-документ §3.2, не мигать вхолостую).
+document.addEventListener('change', e => {
+  if (!e.target.matches('#locdet-vtm-private-domain')) return;
+  const input = document.getElementById('locdet-vtm-faction');
+  const lbl   = document.getElementById('locdet-vtm-faction-lbl');
+  if (!input || !lbl) return;
+  const hadValue = !!input.value.trim();
+  input.value = '';
+  if (e.target.checked) {
+    lbl.textContent = 'Хозяин';
+    input.placeholder = 'Персонаж';
+    input.setAttribute('list', 'locdet-owner-chars-list');
+  } else {
+    lbl.textContent = 'Фракция';
+    input.placeholder = 'Фракция';
+    input.setAttribute('list', 'locdet-factions-list');
+  }
+  if (hadValue) {
+    input.classList.remove('field-cleared-flash');
+    void input.offsetWidth; // restart animation if triggered twice in a row
+    input.classList.add('field-cleared-flash');
+    input.addEventListener('animationend', () => input.classList.remove('field-cleared-flash'), { once: true });
+  }
+});
+
+function closeLocEditModal() {
+  closeModal('loc-edit-modal');
+  _locEditSlug = null;
+}
+
+async function saveLocEdit() {
+  const saveBtn = document.getElementById('loc-edit-save-btn');
+  const errDiv  = document.getElementById('loc-edit-error');
+  const name    = document.getElementById('loc-edit-name').value.trim();
+  const district = document.getElementById('loc-edit-district').value.trim();
+
+  errDiv.style.display = 'none';
+  if (!name) { errDiv.textContent = 'Укажите название'; errDiv.style.display = ''; return; }
+  // Район обязателен только при создании (UI-уровня required — техспека §3.2,
+  // сервер по-прежнему принимает пустой district с фолбэком на «Другие»).
+  if (!_locEditSlug && !district) { errDiv.textContent = 'Укажите район'; errDiv.style.display = ''; return; }
+
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Сохраняем...';
+
+  try {
+    if (_locEditSlug) {
+      // Edit: update individual fields via PUT /fields
+      // Always include every field so empty string clears the existing value
+      const fields = {
+        atmosphere:  document.getElementById('loc-edit-atmosphere').value.trim(),
+        hooks:       document.getElementById('loc-edit-hooks').value.trim(),
+        imagePrompt: document.getElementById('loc-edit-image-prompt').value.trim(),
+        district:    document.getElementById('loc-edit-district').value.trim(),
+        neighborhood:document.getElementById('loc-edit-neighborhood').value.trim(),
+        address:     document.getElementById('loc-edit-address').value.trim(),
+        control:     document.getElementById('loc-edit-control').value.trim(),
+        dangerLevel: document.getElementById('loc-edit-danger').value,
+        // sensoryPalette здесь НЕ отправляется (§C2) — раздел убран из формы,
+        // сенсорика правится только в детальной модалке (_locSavePanel('sens-N')).
+        // Отсутствующий в fields ключ PUT /fields не трогает — существующие каналы
+        // локации остаются как есть, не затираются пустой строкой.
+        vtmText:        document.getElementById('loc-edit-vtm-context').value.trim(),
+      };
+
+      const r = await fetch(`/api/locations/${encodeURIComponent(_locEditSlug)}/fields?city=${encodeURIComponent(CITY)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    } else {
+      // Create
+      const r = await fetch(`/api/locations?city=${encodeURIComponent(CITY)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          district: document.getElementById('loc-edit-district').value.trim() || undefined,
+          context: document.getElementById('loc-edit-context').value.trim() || undefined,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+      const { slug: newSlug } = await r.json();
+
+      // Write remaining fields that POST /api/locations doesn't accept
+      const extraFields = {
+        neighborhood: document.getElementById('loc-edit-neighborhood').value.trim(),
+        address:      document.getElementById('loc-edit-address').value.trim(),
+        control:      document.getElementById('loc-edit-control').value.trim(),
+        atmosphere:   document.getElementById('loc-edit-atmosphere').value.trim(),
+        hooks:        document.getElementById('loc-edit-hooks').value.trim(),
+        imagePrompt:  document.getElementById('loc-edit-image-prompt').value.trim(),
+        dangerLevel:  document.getElementById('loc-edit-danger').value,
+        // sensoryPalette здесь тоже не заполняется (§C2) — сенсорика на этапе создания
+        // недоступна намеренно, тем же принципом, что уже работает для «Ключевых
+        // точек»/VtM-таблицы: заполняется после, в детальной модалке.
+        vtmText:        document.getElementById('loc-edit-vtm-context').value.trim(),
+      };
+      const hasExtra = Object.values(extraFields).some(v => v);
+      if (hasExtra) {
+        const rf = await fetch(`/api/locations/${encodeURIComponent(newSlug)}/fields?city=${encodeURIComponent(CITY)}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: extraFields }),
+        });
+        if (!rf.ok) console.warn('[loc-create] extra fields save failed:', (await rf.json()).error);
+      }
+    }
+
+    // Refresh locations cache
+    STATE.locations = [];
+    closeLocEditModal();
+    await loadLocations();
+  } catch (e) {
+    errDiv.textContent = e.message;
+    errDiv.style.display = '';
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Сохранить';
+  }
+}
+
+// slug по умолчанию = _locEditSlug — сохраняет старое поведение вызова из формы
+// редактирования/генерации (`#loc-edit-modal`) без правок в остальных её местах.
+// Явный slug — новые точки входа (карточка сетки, детальная модалка), где формы
+// редактирования вообще нет на экране (2026-08-06, план «карточка локации» §2.1-2.3).
+async function deleteLoc(slug = _locEditSlug) {
+  if (!slug) return;
+  // §B2 — цель удаления не восстановить обратно (в отличие от переноса, §B1): ссылки
+  // на неё станут битыми без возможности автоподстановки нового пути. Read-only
+  // проверка ПЕРЕД confirm — предупреждаем, но не блокируем: решение за Рассказчиком.
+  let warnText = '';
+  try {
+    const bl = await fetch(`/api/locations/${encodeURIComponent(slug)}/backlinks?city=${encodeURIComponent(CITY)}`).then(r => r.ok ? r.json() : null);
+    if (bl && bl.count > 0) {
+      const shown = bl.files.slice(0, 5).join(', ') + (bl.files.length > 5 ? `, ещё ${bl.files.length - 5}…` : '');
+      warnText = ` На эту локацию ссылаются файлы (${bl.count}): ${shown} — ссылки станут битыми.`;
+    }
+  } catch { /* проверка best-effort — сбой не должен блокировать сам confirm */ }
+
+  if (!await showConfirm(`Удалить локацию «${slug}»? Это действие необратимо.${warnText}`, { danger: true, confirmText: 'Удалить' })) return;
+  // Кнопка формы редактирования — может отсутствовать на экране (вызов с карточки/
+  // детальной модалки, форма не открыта); отключаем, только если она есть.
+  const btn = document.getElementById('loc-edit-delete-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`/api/locations/${encodeURIComponent(slug)}?city=${encodeURIComponent(CITY)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    closeLocEditModal();          // no-op, если форма не открыта
+    closeModal('loc-detail-modal'); // no-op, если модалка не открыта
+    STATE.locations = [];
+    await loadLocations();
+    showToast('Локация удалена', 'success');
+  } catch (e) {
+    const errDiv = document.getElementById('loc-edit-error');
+    if (errDiv) { errDiv.textContent = e.message; errDiv.style.display = ''; }
+    else showToast('Не удалось удалить: ' + e.message, 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+// Обратная совместимость — старый вызов из формы `#loc-edit-modal` без аргумента.
+const deleteLocCurrent = () => deleteLoc();
+
+async function runLocFieldRegen(field) {
+  const slug = _locEditSlug;
+  const name = document.getElementById('loc-edit-name').value.trim();
+  const context = document.getElementById('loc-edit-context').value.trim();
+  const hint    = document.getElementById('loc-edit-gen-hint');
+  const spinner = document.getElementById('loc-gen-spinner');
+  hint.textContent = '';
+  spinner.style.display = '';
+
+  try {
+    const r = await fetch(`/api/locations/generate?city=${encodeURIComponent(CITY)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug, name, field, context }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    const { value } = await r.json();
+    if (!value) throw new Error('Пустой ответ');
+
+    const fieldMap = { atmosphere: 'atmosphere', imagePrompt: 'image-prompt', hooks: 'hooks', vtmText: 'vtm-context' };
+    const elId = fieldMap[field];
+    if (elId) document.getElementById(`loc-edit-${elId}`).value = value;
+    hint.textContent = '✓ Готово';
+  } catch (e) {
+    hint.textContent = `⚠ ${e.message}`;
+  } finally {
+    spinner.style.display = 'none';
+  }
+}
+
+async function runLocFullGen() {
+  const slug = _locEditSlug;
+  const name = document.getElementById('loc-edit-name').value.trim();
+  const context = document.getElementById('loc-edit-context').value.trim();
+  if (!name) { document.getElementById('loc-edit-error').textContent = 'Укажите название для генерации'; document.getElementById('loc-edit-error').style.display = ''; return; }
+
+  const hint    = document.getElementById('loc-edit-gen-hint');
+  const btn     = document.getElementById('loc-edit-gen-full-btn');
+  const spinner = document.getElementById('loc-gen-spinner');
+  hint.textContent = '';
+  btn.disabled = true;
+  spinner.style.display = '';
+
+  try {
+    const r = await fetch(`/api/locations/generate?city=${encodeURIComponent(CITY)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug, name, context }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    const { content } = await r.json();
+    if (!content) throw new Error('Пустой ответ от AI');
+
+    // Парсинг делегирован /api/locations/parse-generated — тот же parseLocation
+    // (lib/parsers.js), которым парсятся сохранённые карточки локаций.
+    const parseR = await fetch(`/api/locations/parse-generated${window.location.search}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: content }),
+    });
+    if (!parseR.ok) throw new Error((await parseR.json()).error || parseR.statusText);
+    const parsed = await parseR.json();
+
+    if (parsed.atmosphere) document.getElementById('loc-edit-atmosphere').value = parsed.atmosphere;
+    if (parsed.hooks?.length) document.getElementById('loc-edit-hooks').value = parsed.hooks.map(h => `${h}`).join('\n');
+
+    const promptM = content.match(/```\s*\n([\s\S]+?)```/);
+    if (promptM) document.getElementById('loc-edit-image-prompt').value = promptM[1].trim();
+
+    // parsed.sensoryPalette из ответа AI-генерации здесь больше не подставляется
+    // (§C2) — форме негде её показать. Сенсорика, сгенерированная вместе с полной
+    // карточкой, для этого пути теряется — принятое следствие решения не дублировать
+    // редактор каналов в форме; подробное заполнение — после, в детальной модалке
+    // (которая умеет генерировать по каналу отдельно, с тем же результатом).
+
+    // Только проза — табличные строки идут отдельным структурным путём;
+    // отправка их же как vtmText задвоила бы таблицу поверх существующей.
+    if (parsed.vtmText) {
+      const prose = parsed.vtmText.split('\n').filter(l => !l.startsWith('|') && l.trim()).join('\n').trim();
+      if (prose) document.getElementById('loc-edit-vtm-context').value = prose;
+    }
+
+    hint.textContent = '✓ Карточка сгенерирована — проверьте и сохраните';
+  } catch (e) {
+    hint.textContent = `⚠ ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+// Wire up modal events
+(function _initLocEditModal() {
+  document.getElementById('loc-edit-cancel').addEventListener('click', closeLocEditModal);
+  document.getElementById('loc-edit-save-btn').addEventListener('click', saveLocEdit);
+  document.getElementById('loc-edit-delete-btn').addEventListener('click', deleteLocCurrent);
+  document.getElementById('loc-edit-gen-full-btn').addEventListener('click', runLocFullGen);
+  document.getElementById('loc-edit-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeLocEditModal();
+  });
+  document.getElementById('loc-edit-modal').addEventListener('click', e => {
+    const regenBtn = e.target.closest('.loc-edit-regen-btn');
+    if (regenBtn) runLocFieldRegen(regenBtn.dataset.field);
+  });
+
+  // "Create location" button on locations page
+  document.getElementById('loc-page-create-btn')?.addEventListener('click', () => openLocEditModal(null));
+
+  document.getElementById('btn-export-locs')?.addEventListener('click', e => {
+    e.preventDefault();
+    window.location.href = `/api/export/locations${window.location.search}`;
+  });
+
+  // "Edit"/"Delete" buttons in loc-detail-modal (delegated)
+  document.getElementById('loc-detail-content').addEventListener('click', e => {
+    const editBtn = e.target.closest('#locdet-open-edit-modal');
+    if (editBtn) { openLocEditModal(editBtn.dataset.slug); return; }
+    const delBtn = e.target.closest('#locdet-delete-btn');
+    if (delBtn) deleteLoc(delBtn.dataset.slug);
+  });
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Module Locations Panel
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function _renderModuleLocPanel(data) {
+  await ensureLocsLoaded();
+  const panel = document.getElementById('modp-panel-locations');
+  const { chronicle, name: modName } = STATE.currentModule || {};
+
+  const linked   = data.linkedLocations || [];
+  const extracted = data.locations || [];
+
+  const linkedHtml = linked.length
+    ? `<div class="modp-loc-cards">${linked.map(loc => _locCardHtml(loc, {
+        overlayExtra: `<button class="modp-loc-card-unlink" data-unlink="${escHtml(loc.slug)}" title="Открепить" onclick="event.stopPropagation()">✕</button>`,
+      })).join('')}</div>`
+    : '<div class="modp-empty" style="padding:8px 0">Связанных локаций нет</div>';
+
+  // «Mentioned in scenario» — with quick-attach buttons
+  const mentionedHtml = extracted.length
+    ? `<ul class="modp-locs-mentioned-list">
+        ${extracted.map(loc => {
+          const locName = loc.name || '';
+          const isLinked = linked.some(
+            l => (l.title || '').toLowerCase() === locName.toLowerCase());
+          const existsInCity = (STATE.locations || []).find(
+            l => (l.name || l.title || '').toLowerCase() === locName.toLowerCase());
+          const attachSlug = existsInCity?.slug;
+          return `<li class="modp-locs-mentioned-item">
+            <span>${escHtml(locName)}</span>
+            ${isLinked
+              ? `<span class="modp-locs-linked-badge">✓ Прикреплена</span>`
+              : attachSlug
+                ? `<button class="modp-locs-attach-btn"
+                     data-attach-slug="${escHtml(attachSlug)}"
+                     data-attach-name="${escHtml(locName)}">📎 Прикрепить</button>`
+                : `<button class="modp-locs-create-btn"
+                     data-create-name="${escHtml(locName)}">✨ Создать карточку</button>`
+            }
+          </li>`;
+        }).join('')}
+      </ul>`
+    : '';
+
+  panel.innerHTML = `
+    <div class="modp-locs-toolbar">
+      <button class="modp-locs-add-btn" id="modp-locs-attach-toggle">📎 Прикрепить локацию</button>
+      <button class="modp-locs-new-btn" id="modp-locs-gen-toggle">✨ Новая локация для сцены</button>
+    </div>
+
+    <div class="modp-loc-attach-panel" id="modp-loc-attach-panel">
+      <input class="chr-form-input modp-loc-attach-search" id="modp-loc-attach-search" placeholder="Поиск по названию..." autocomplete="off">
+      <div class="modp-loc-attach-list" id="modp-loc-attach-list"></div>
+    </div>
+
+    <div class="modp-loc-gen-form" id="modp-loc-gen-form">
+      <div class="chr-form-group">
+        <label class="chr-form-label" for="modp-loc-gen-name">Название</label>
+        <input class="chr-form-input" id="modp-loc-gen-name" placeholder="Бар «Бретонский якорь»" autocomplete="off">
+      </div>
+      <div class="chr-form-group">
+        <label class="chr-form-label" for="modp-loc-gen-context">Контекст сцены</label>
+        <input class="chr-form-input" id="modp-loc-gen-context" placeholder="Что здесь происходит" autocomplete="off">
+      </div>
+      <div class="modp-loc-gen-actions">
+        <button class="chr-modal-btn cancel" id="modp-loc-gen-cancel">Отмена</button>
+        <button class="chr-modal-btn create" id="modp-loc-gen-save">Создать и прикрепить</button>
+      </div>
+    </div>
+
+    <div class="modp-locs-section-title">Связанные локации</div>
+    <div id="modp-loc-chip-list">${linkedHtml}</div>
+
+    ${mentionedHtml ? `<div class="modp-locs-section-title">Упомянуты в сценарии</div>${mentionedHtml}` : ''}
+  `;
+
+  // ── Event wiring for this panel ──────────────────────────────────
+  const linkedSlugs = linked.map(l => l.slug);
+
+  // Attach panel toggle
+  document.getElementById('modp-locs-attach-toggle').addEventListener('click', () => {
+    const p = document.getElementById('modp-loc-attach-panel');
+    const isOpen = p.classList.toggle('open');
+    if (isOpen) _fillAttachList(linkedSlugs);
+  });
+
+  // Gen form toggle
+  document.getElementById('modp-locs-gen-toggle').addEventListener('click', () => {
+    document.getElementById('modp-loc-gen-form').classList.toggle('open');
+  });
+  document.getElementById('modp-loc-gen-cancel').addEventListener('click', () => {
+    document.getElementById('modp-loc-gen-form').classList.remove('open');
+  });
+
+  // Search filter for attach list
+  document.getElementById('modp-loc-attach-search').addEventListener('input', e => {
+    _fillAttachList(linkedSlugs, e.target.value);
+  });
+
+  // Chip clicks → open loc detail; unlink buttons
+  document.getElementById('modp-loc-chip-list').addEventListener('click', e => {
+    const unlinkBtn = e.target.closest('[data-unlink]');
+    if (unlinkBtn) {
+      _modLocUnlink(chronicle, modName, unlinkBtn.dataset.unlink);
+      return;
+    }
+    const delBtn = e.target.closest('.loc-card-del-btn');
+    if (delBtn) { deleteLoc(delBtn.dataset.delLoc); return; }
+    const card = e.target.closest('.loc-card');
+    if (card) {
+      const slug = card.dataset.slug;
+      if (slug) { ensureLocsLoaded().then(() => openLocDetail(slug)); }
+    }
+  });
+
+  // Quick-attach existing location from mentioned list
+  const mentionedList = panel.querySelector('.modp-locs-mentioned-list');
+  if (mentionedList) {
+    mentionedList.addEventListener('click', e => {
+      const attachBtn = e.target.closest('[data-attach-slug]');
+      if (attachBtn) {
+        const slug = attachBtn.dataset.attachSlug;
+        if (!slug) return;
+        attachBtn.disabled = true;
+        _modLocLink(chronicle, modName, slug).catch(() => { attachBtn.disabled = false; });
+        return;
+      }
+
+      // Create new location card with pre-filled name
+      const createLocBtn = e.target.closest('[data-create-name]');
+      if (createLocBtn) {
+        const locName = createLocBtn.dataset.createName;
+        if (typeof openLocEditModal === 'function') {
+          openLocEditModal(null);
+          // Pre-fill name after modal opens (next tick)
+          setTimeout(() => {
+            const nameInput = document.getElementById('loc-edit-name');
+            if (nameInput) nameInput.value = locName;
+          }, 0);
+        } else {
+          const modal = document.getElementById('loc-edit-modal');
+          if (modal) {
+            modal.style.display = 'flex';
+            const nameInput = document.getElementById('loc-edit-name');
+            if (nameInput) nameInput.value = locName;
+          }
+        }
+      }
+    });
+  }
+
+  // Create + link
+  document.getElementById('modp-loc-gen-save').addEventListener('click', async () => {
+    const locName = document.getElementById('modp-loc-gen-name').value.trim();
+    const ctx     = document.getElementById('modp-loc-gen-context').value.trim();
+    if (!locName) return;
+    const btn = document.getElementById('modp-loc-gen-save');
+    btn.disabled = true;
+    btn.textContent = 'Создаём...';
+    try {
+      const r = await fetch(`/api/locations?city=${encodeURIComponent(CITY)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: locName, context: ctx, generate: !!ctx }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+      const { slug } = await r.json();
+      STATE.locations = [];
+      await _modLocLink(chronicle, modName, slug);
+    } catch (e) {
+      showToast(e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Создать и прикрепить';
+    }
+  });
+}
+
+function _fillAttachList(linkedSlugs, query = '') {
+  const listEl = document.getElementById('modp-loc-attach-list');
+  if (!listEl) return;
+  const q = query.toLowerCase();
+  const items = STATE.locations
+    .filter(l => !q || (l.title || l.slug).toLowerCase().includes(q) || (l.district || '').toLowerCase().includes(q))
+    .slice(0, 40);
+
+  listEl.innerHTML = items.length
+    ? items.map(loc => {
+        const isLinked = linkedSlugs.includes(loc.slug);
+        const title = loc.title || loc.subtype || loc.slug;
+        const meta  = [loc.district, loc.neighborhood].filter(Boolean).join(' · ');
+        return `<div class="modp-loc-attach-item${isLinked ? ' already-linked' : ''}" data-attach="${escHtml(loc.slug)}" title="${escHtml(meta)}">
+          ${escHtml(title)}${meta ? ` <span style="color:var(--muted);font-size:var(--fs-xs)">(${escHtml(meta)})</span>` : ''}
+        </div>`;
+      }).join('')
+    : '<div style="padding:6px;color:var(--muted);font-size:var(--fs-lg)">Локации не найдены</div>';
+
+  listEl.querySelectorAll('.modp-loc-attach-item:not(.already-linked)').forEach(el => {
+    el.addEventListener('click', () => {
+      const { chronicle, name: modName } = STATE.currentModule || {};
+      _modLocLink(chronicle, modName, el.dataset.attach);
+    });
+  });
+}
+
+async function _modLocLink(chronicle, modName, slug) {
+  try {
+    const r = await fetch(
+      `/api/chronicles/${encodeURIComponent(chronicle)}/modules/${encodeURIComponent(modName)}/locations?city=${encodeURIComponent(CITY)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug }) }
+    );
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    // Re-fetch module detail only — _renderModuleLocPanel uses data.linkedLocations, not STATE.locations
+    const dataR = await fetch(`/api/chronicles/${encodeURIComponent(chronicle)}/modules/${encodeURIComponent(modName)}/detail?city=${encodeURIComponent(CITY)}`);
+    const data  = await dataR.json();
+    await _renderModuleLocPanel(data);
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function _modLocUnlink(chronicle, modName, slug) {
+  try {
+    const r = await fetch(
+      `/api/chronicles/${encodeURIComponent(chronicle)}/modules/${encodeURIComponent(modName)}/locations/${encodeURIComponent(slug)}?city=${encodeURIComponent(CITY)}`,
+      { method: 'DELETE' }
+    );
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    const dataR = await fetch(`/api/chronicles/${encodeURIComponent(chronicle)}/modules/${encodeURIComponent(modName)}/detail?city=${encodeURIComponent(CITY)}`);
+    const data  = await dataR.json();
+    await _renderModuleLocPanel(data);
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function ensureLocsLoaded() {
+  if (STATE.locations.length) return;
+  try {
+    const data = await fetch(`/api/locations?city=${encodeURIComponent(CITY)}`).then(r => r.json());
+    STATE.locations = Array.isArray(data) ? data : [];
+    // Only refresh the location filter when on the locations page (element may be absent)
+    const distSel = document.getElementById('loc-filter-district');
+    if (distSel) populateDistrictFilter();
+  } catch (e) {
+    // Swallowed on purpose (callers show whatever list they already have),
+    // but log it — a network failure here looks identical to "no locations
+    // exist" otherwise (docs/audit/2026-07-09-project-improvement-plan.md P1.7).
+    console.error('ensureLocsLoaded:', e);
+  }
+}

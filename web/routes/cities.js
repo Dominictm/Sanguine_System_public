@@ -1,0 +1,851 @@
+'use strict';
+// Роутер городов (доменов): список, сводка, деталь, создание, правка, удаление.
+// Включает синк «Политического ландшафта» city.md с archive/political_state.md.
+// Вынесено из server.js (E1.2).
+
+const express = require('express');
+const path    = require('path');
+const fs      = require('fs').promises;
+const { serverError } = require('../lib/http');
+const {
+  ROOT, CITIES_DIR, DEFAULT_CITY, cityDir, locsDir,
+  listCities, writeFileAtomic, invalidateChars,
+  getAllCharacters, getAllLocations, listModules, countMdFiles,
+  EDITABLE_FIELD_MAP, writeCharacterCardField, writeLocationVtmTableField,
+} = require('../lib/db');
+const {
+  slugify, buildCityMd, parseCityMd, cityScaffold, sanitizeInlineText, escapeTableCell, unescapeTableCell,
+  buildDistrictMd, parseDistrictMd, DISTRICT_FILENAME, CITY_SECTIONS,
+} = require('../lib/parsers');
+const {
+  setCityTitle, setCityDescription, upsertCitySectionFromForm, upsertCitySection, replaceCitySectionBullets,
+} = require('../lib/city_md_writer');
+const { SIGNIFICANT_PLACE_TYPES, parseLocationLine } = require('../lib/significant_places');
+const {
+  readRelationTypesDoc, writeRelationTypesDoc, makeRelationResolver,
+  isCanonSlug, randomRelColor,
+} = require('../lib/relation-types');
+const { RESERVED_NAMES, RESERVED_SLUGS } = require('../lib/parsers/relation-types');
+
+const router = express.Router();
+
+router.get('/api/cities', async (req, res) => {
+  try { res.json({ cities: await listCities(), default: DEFAULT_CITY }); }
+  catch (e) { serverError(res, e); }
+});
+
+// Card-friendly summary of every city in cities/ — used by the «Домены» tab.
+router.get('/api/cities/summary', async (req, res) => {
+  try {
+    const slugs = await listCities();
+    const out = await Promise.all(slugs.map(async slug => {
+      let display = slug, year = '';
+      try {
+        const cm = await fs.readFile(path.join(cityDir(slug), 'city.md'), 'utf-8');
+        const p  = parseCityMd(cm);
+        if (p.display) display = p.display;
+        year = p.year || '';
+      } catch {}
+      let characters = 0;
+      try { characters = (await getAllCharacters(slug)).length; } catch {}
+      let modules = 0;
+      try { modules = (await listModules(slug)).length; } catch {}
+      let locations = 0;
+      try { locations = await countMdFiles(locsDir(slug)); } catch {}
+      return { slug, display, year, characters, modules, locations };
+    }));
+    out.sort((a, b) => a.display.localeCompare(b.display, 'ru'));
+    res.json(out);
+  } catch (e) { serverError(res, e); }
+});
+
+// Full city.md + stats for one city — used by the city detail modal.
+router.get('/api/cities/:slug/detail', async (req, res) => {
+  try {
+    const slug = req.params.slug;
+    if (!(await listCities()).includes(slug)) return res.status(404).json({ error: 'Город не найден' });
+
+    const cityMd = (await fs.readFile(path.join(cityDir(slug), 'city.md'), 'utf-8').catch(() => '')).replace(/^﻿/, '');
+    const parsed = parseCityMd(cityMd);   // { display, year, sections } — для предзаполнения формы
+
+    let characters = 0;
+    try { characters = (await getAllCharacters(slug)).length; } catch {}
+    let modules = 0;
+    try { modules = (await listModules(slug)).length; } catch {}
+    let locations = 0;
+    try { locations = await countMdFiles(locsDir(slug)); } catch {}
+
+    res.json({ slug, cityMd, parsed, characters, modules, locations });
+  } catch (e) { serverError(res, e); }
+});
+
+// Плоский список фракций города (секты/независимые кланы/«Другие»/«Фракции смертных»/
+// «Государственные») — источник для select «Фракция» на VtM-вкладке локации
+// (2026-08-06, план «карточка локации» §3.2). НЕ переиспользует /api/factions (тот —
+// другой источник, таблица «политического ландшафта», не секция «Фракции» city.md,
+// см. техспеку §7.5) и не группирует по категориям (та группировка — только для UI
+// вкладки «Фракции» самого города, здесь нужен единый плоский список для datalist).
+router.get('/api/cities/:slug/factions-list', async (req, res) => {
+  try {
+    const slug = req.params.slug;
+    if (!(await listCities()).includes(slug)) return res.status(404).json({ error: 'Город не найден' });
+    const md = await fs.readFile(path.join(cityDir(slug), 'city.md'), 'utf-8').catch(() => '');
+    const sec = parseCityMd(md).sections || {};
+    const parseList = text => String(text || '').split('\n').map(l => l.replace(/^\s*-\s?/, '').trim()).filter(Boolean);
+    const all = [...new Set([
+      ...parseList(sec.factions),
+      ...parseList(sec.factionsMortal),
+      ...parseList(sec.factionsState),
+    ])];
+    res.json(all);
+  } catch (e) { serverError(res, e); }
+});
+
+// ── City create / edit / delete ────────────────────────────────────────────────
+
+// POST /api/cities — create a city directly (no CLI spawn). Body: { name, year, political,
+// locations, leitmotif, specifics, avoid, sources, districts }. Builds the same scaffold
+// as tools/new_city.js using the shared buildCityMd template.
+router.post('/api/cities', express.json(), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const display = String(b.name || '').trim();
+    if (!display) return res.status(400).json({ error: 'Укажи название города' });
+    const slug = slugify(display);
+    if (!slug) return res.status(400).json({ error: 'Не удалось сформировать слаг из названия' });
+    // Год обязателен (как и на фронте) и должен быть 3–4 цифрами.
+    const year = String(b.year || '').trim();
+    if (!year) return res.status(400).json({ error: 'Укажи год' });
+    if (!/^\d{3,4}$/.test(year)) return res.status(400).json({ error: 'Год — это 3–4 цифры (например 2010)' });
+    if ((await listCities()).includes(slug))
+      return res.status(409).json({ error: `Город «${slug}» уже существует` });
+
+    const base = cityDir(slug);
+
+    const W    = (rel, txt) => fs.mkdir(path.dirname(path.join(base, rel)), { recursive: true })
+      .then(() => writeFileAtomic(path.join(base, rel), txt, 'utf-8'));
+    const KEEP = rel => fs.mkdir(path.join(base, rel), { recursive: true })
+      .then(() => writeFileAtomic(path.join(base, rel, '.gitkeep'), ''));
+
+    // Единый каркас (тот же, что у tools/new_city.js) — см. cityScaffold в web/lib/parsers.js.
+    // Все 16 канонических секций, а не 8: раньше whitelist молча терял «живые» секции
+    // города, из которых пять — рабочий вход генерации (limits/edicts/hunting/tech →
+    // buildCityConstraints, naming → buildCityNaming). Свежесозданный город уходил в
+    // генерацию без ограничений домена и без именника (§A2).
+    const { files, keepDirs } = cityScaffold({
+      display, year,
+      description: b.description, factions: b.factions,
+      factionsMortal: b.factionsMortal, factionsState: b.factionsState,
+      political: b.political, locations: b.locations, leitmotif: b.leitmotif,
+      specifics: b.specifics, avoid: b.avoid, sources: b.sources,
+      districts: b.districts,
+      landmarks: b.landmarks, hunting: b.hunting, edicts: b.edicts,
+      mortals: b.mortals, calendar: b.calendar, tech: b.tech,
+      limits: b.limits, naming: b.naming,
+    });
+    const warnings = [];
+    try {
+      for (const [rel, txt] of Object.entries(files)) await W(rel, txt);
+      for (const rel of keepDirs) await KEEP(rel);
+      // Отразить указанный политический состав в archive/political_state.md «Карте фракций»
+      // сразу при создании — как это делает PUT при редактировании.
+      if (typeof b.political === 'string' && b.political.trim()) {
+        await syncPoliticalStateTable(slug, parsePoliticalRecords(b.political.split('\n')), []).catch(() => {});
+      }
+      // «Иерархия»/zone-control на карточках персонажей и локаций (§4.2/§5.2 техспеки) —
+      // на только что созданный город это на практике no-op (у свежего города ещё нет
+      // персонажей/локаций, чтобы имя из формы могло на них сослаться), но тот же путь,
+      // что и PUT, держим для симметрии «применяется и при создании, и при редактировании».
+      if (typeof b.political === 'string' && b.political.trim()) {
+        warnings.push(...await syncPoliticalCharacterHierarchy(slug, display, parsePoliticalRecords(b.political.split('\n')), []));
+      }
+      if (typeof b.locations === 'string' && b.locations.trim()) {
+        warnings.push(...await syncSignificantPlaceStatus(slug, parseLocationRecords(b.locations.split('\n')), []));
+      }
+    } catch (writeErr) {
+      // Откат: слага не было до запроса (проверка выше), папка свежая — сносим целиком,
+      // чтобы не оставить полу-созданный «битый» город в списке.
+      await fs.rm(base, { recursive: true, force: true }).catch(() => {});
+      throw writeErr;
+    }
+
+    invalidateChars(slug);
+    console.log(`[create-city] ${slug} («${display}», ${year})`);
+    res.json({ ok: true, slug, display, year, ...(warnings.length ? { warnings } : {}) });
+  } catch (e) {
+    console.error('[create-city]', e.message);
+    serverError(res, e);
+  }
+});
+
+// Разбор строк секции «Политический ландшафт» ("Роль: Имя / Имя2") в структурные записи.
+// Зеркалит эвристику _isStructuredCityLine из scripts.js: запись — короткая метка (≤24,
+// ≤2 слов, без запятой) + значение, похожее на имя (≤48, без прозаической пунктуации).
+// Иначе строка — нарратив и в «Карту фракций» не идёт (проза с двоеточием тоже).
+function parsePoliticalRecords(lines) {
+  return (Array.isArray(lines) ? lines : String(lines || '').split('\n'))
+    .map(l => String(l).replace(/^\s*-\s?/, '').trim()).filter(Boolean)
+    .map(line => {
+      const ci = line.indexOf(':');
+      let role = '', rest = line;
+      if (ci > 0 && ci <= 40) {
+        const label = line.slice(0, ci).trim();
+        const value = line.slice(ci + 1).trim();
+        const labelOk = label && label.length <= 24 && label.split(/\s+/).length <= 2 && !label.includes(',');
+        const valueOk = value.length > 0 && value.length <= 48 && !/[.!?,;]/.test(value);
+        if (labelOk && valueOk) { role = label; rest = value; }
+      }
+      const [name = '', name2 = ''] = rest.split('/').map(s => s.trim());
+      return { role, name, name2 };
+    }).filter(r => r.role);
+}
+function _parseMdTableRow(r) { return r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim()); }
+
+// Зеркалирование политического ландшафта в archive/political_state.md «Карта фракций»,
+// чтобы страница «Фракции» отражала тот же состав. Строки управляемых здесь должностей
+// перестраиваются; рукописные строки прочих должностей сохраняются. previousRoles —
+// должности, что были в city.md до сохранения (чтобы убрать удалённые в редакторе).
+async function syncPoliticalStateTable(slug, records, previousRoles = []) {
+  const file = path.join(cityDir(slug), 'archive', 'political_state.md');
+  const md = await fs.readFile(file, 'utf-8').catch(() => null);
+  if (md === null) return;
+  let chars = [];
+  try { chars = await getAllCharacters(slug); } catch {}
+  const clanByName = new Map(chars.map(c => [c.name, c.clan || '']));
+  const lines = md.split('\n');
+  const headerIdx = lines.findIndex(l => /^\s*\|.*Должность.*\|.*Персонаж.*\|/i.test(l));
+  if (headerIdx === -1) return;
+  const sepIdx = headerIdx + 1;
+  let end = sepIdx + 1;
+  while (end < lines.length && /^\s*\|/.test(lines[end])) end++;
+  const existingRows = lines.slice(sepIdx + 1, end).map(_parseMdTableRow);
+  // unescapeTableCell/escapeTableCell: FIX-16 (docs/audit/2026-07-28-fix-plan.md,
+  // continuation of FIX-2) — role/name come from the free-text «Политический
+  // ландшафт» textarea; an embedded '|' otherwise shifted every column after it
+  // on the next parse (confirmed live during QA with a "Князь: Тест|ВЗЛОМ" line).
+  const noteByRole = new Map(existingRows.map(r => [unescapeTableCell(r[0]), r[3] || '']));
+  const savedRoles = new Set(records.map(r => r.role).filter(Boolean));
+  const removedRoles = new Set(previousRoles.filter(role => role && !savedRoles.has(role)));
+  const kept = existingRows.filter(r => !savedRoles.has(unescapeTableCell(r[0])) && !removedRoles.has(unescapeTableCell(r[0])));
+  const newRows = records.filter(r => r.role || r.name || r.name2).map(r => {
+    const persons = escapeTableCell(sanitizeInlineText([r.name, r.name2].filter(Boolean).join(' / '))) || '—';
+    const clan = escapeTableCell(sanitizeInlineText(clanByName.get(r.name) || clanByName.get(r.name2) || ''));
+    return [escapeTableCell(sanitizeInlineText(r.role)) || '—', persons, clan, noteByRole.get(r.role) || ''];
+  });
+  const allRows = [...newRows, ...kept];
+  const rowsText = allRows.length ? allRows.map(r => `| ${r.join(' | ')} |`).join('\n') : '|  |  |  |  |';
+  lines.splice(sepIdx + 1, end - (sepIdx + 1), rowsText);
+  await writeFileAtomic(file, lines.join('\n'), 'utf-8');
+}
+
+// Разбор строк секции «Ключевые локации» ("Тип: Название") в структурные записи —
+// та же эвристика, что parsePoliticalRecords выше (зеркалит _isStructuredCityLine из
+// city.js), применённая к «Значимым местам» (docs/design/2026-08-02-city-creation-
+// restructure-techspec.md §5). Нужна на сервере для diff'а «кто выбыл из списка» перед
+// синком «Статуса» карточек локаций (§5.1-5.2) — без похода в клиентский код.
+// Обёртка над parseLocationLine из общего модуля (2026-08-06, техспека «Статус
+// заменяет Зону» §1.1) — сохраняет прежний контракт: фильтрует нарратив выбросом
+// (для этого диффа он не нужен, в отличие от splitLocationSection, которым
+// пользуется обратная запись в routes/locations.js).
+function parseLocationRecords(lines) {
+  return (Array.isArray(lines) ? lines : String(lines || '').split('\n'))
+    .map(l => String(l).replace(/^\s*-\s?/, '').trim()).filter(Boolean)
+    .map(parseLocationLine).filter(Boolean);
+}
+
+// Первое имя/имя2 → роль (для diff'а). Персонаж, занятый в двух ролях одновременно
+// (техспека §4.3 — открытый вопрос), сохраняет первую встреченную — не было буквально
+// в плане Аналитика, простейшее из технически корректных поведений.
+function _rolesByName(records) {
+  const map = new Map();
+  records.forEach(r => {
+    if (r.name && !map.has(r.name))   map.set(r.name, r.role);
+    if (r.name2 && !map.has(r.name2)) map.set(r.name2, r.role);
+  });
+  return map;
+}
+function _placesByName(records) {
+  const map = new Map();
+  records.forEach(r => { if (r.name && !map.has(r.name)) map.set(r.name, r); });
+  return map;
+}
+
+// Записывает/снимает роль (Властители города + Примогенат, «Карта фракций») в поле
+// «Иерархия в городе» карточки персонажа при сохранении города — город → персонаж
+// (docs/design/2026-08-02-city-creation-restructure-techspec.md §4.2-4.4). Пишет ТОЛЬКО
+// когда имя в строке совпало с существующим персонажем города — вручную вписанное имя
+// не создаёт запись (нет карточки, которую можно было бы найти). Ни разу не бросает —
+// одна неудавшаяся запись собирается в warnings и не должна срывать сохранение города.
+//
+// «Титул» — CSV-список (2026-08-08, Часть 8 — мульти-выбор титулов из библиотеки на карточке
+// персонажа, та же модель, что фронт уже применяет к «Дисциплинам»/«Титулу»,
+// char-detail.js:_cdetDisciplineTokens): синк трогает ТОЛЬКО свой собственный токен
+// "${role} города ${cityDisplay}", остальные вручную добавленные титулы не задевает. Раньше
+// поле перезаписывалось/сравнивалось целиком — с мульти-выбором это стирало бы вручную
+// добавленные титулы при каждом сохранении города.
+async function syncPoliticalCharacterHierarchy(city, cityDisplay, records, prevRecords) {
+  const warnings = [];
+  const currByName = _rolesByName(records);
+  const prevByName  = _rolesByName(prevRecords);
+  if (!currByName.size && !prevByName.size) return warnings;
+
+  let chars = [];
+  try { chars = await getAllCharacters(city); }
+  catch (e) { warnings.push(`Не удалось прочитать персонажей города для синка «Титула»: ${e.message}`); return warnings; }
+  const charByName = new Map(chars.map(c => [c.name, c]));
+  const hierarchyMdKey = EDITABLE_FIELD_MAP.hierarchy;
+  const tokensOf = v => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  // Выбывшие: держали роль ДО сохранения, сейчас ни на одной роли не числятся по имени.
+  for (const [name, role] of prevByName) {
+    if (currByName.has(name)) continue;
+    const char = charByName.get(name);
+    if (!char) continue; // персонаж переименован/удалён между сохранениями — нечего чистить
+    const expected = `${role} города ${cityDisplay}`;
+    const tokens = tokensOf(char.hierarchy);
+    const idx = tokens.indexOf(expected);
+    if (idx === -1) continue; // токена нет — снят вручную или не был проставлен, не трогаем
+    tokens.splice(idx, 1);
+    try { await writeCharacterCardField(city, char, hierarchyMdKey, tokens.join(', ')); }
+    catch (e) { warnings.push(`Не удалось очистить «Титул» у «${name}»: ${e.message}`); }
+  }
+  // Новые/сохранившие роль: добавляем текущую должность в начало списка (если её ещё нет) —
+  // именно первым токеном, а не в конец: политический титул — самый статусно значимый,
+  // не должен теряться в хвосте у персонажа с несколькими вручную добавленными титулами.
+  for (const [name, role] of currByName) {
+    const char = charByName.get(name);
+    if (!char) continue; // ручной ввод текста, не выбор существующего персонажа — не пишем
+    const value = `${role} города ${cityDisplay}`;
+    const tokens = tokensOf(char.hierarchy);
+    if (tokens.includes(value)) continue; // уже проставлено
+    tokens.unshift(value);
+    try { await writeCharacterCardField(city, char, hierarchyMdKey, tokens.join(', ')); }
+    catch (e) { warnings.push(`Не удалось записать «Титул» «${name}» (${role}): ${e.message}`); }
+  }
+  return warnings;
+}
+
+// «Тип» из «Значимых мест» → куда его писать на карточке САМОЙ локации.
+// SIGNIFICANT_PLACE_TYPES — теперь общий модуль (web/lib/significant_places.js,
+// см. импорт вверху файла), 2026-08-06 техспека «Статус заменяет Зону» §2:
+// значение поля — чистый тип («Элизиум»), без маркера «[Город]» и без заметки.
+// Заметка (третье поле строки city.md) больше НЕ попадает в поле локации вообще —
+// она видна и редактируется только в «Отмеченных локациях» самого города (п.2
+// исходной задачи — «в модалке локации только значение статуса»).
+
+// Симметрично syncPoliticalCharacterHierarchy, но для «Значимых мест» → «Статус»
+// (вкладка VtM) карточки локации (техспека §5.1-5.2, редирект-правка §7.1/§3.1). Diff
+// читается из city.md-строк «Тип: Название» (records/prevRecords уже распарсены через
+// parseLocationRecords), не из текущего содержимого loc.locStatus — это делает сам
+// diff надёжным (§5.1); свободные/«Другое» типы без маппинга в SIGNIFICANT_PLACE_TYPES
+// не синкаются никуда, кроме city.md.
+async function syncSignificantPlaceStatus(city, records, prevRecords) {
+  const warnings = [];
+  const currByName = _placesByName(records);
+  const prevByName  = _placesByName(prevRecords);
+  if (!currByName.size && !prevByName.size) return warnings;
+
+  let locs = [];
+  try { locs = await getAllLocations(city); }
+  catch (e) { warnings.push(`Не удалось прочитать локации города для синка «Значимых мест»: ${e.message}`); return warnings; }
+  // Ключуем не только полным заголовком карточки (loc.title), но и его частью ДО
+  // первого «Имя — Заметка»-тире: у части карточек (напр. Парижа — «Опера Гарнье —
+  // Главный Элизиум, 9-й округ») заметка исторически вписана прямо в заголовок, а
+  // строка city.md после parseLocationRecords (выше в файле — режет по первому « — »
+  // на name/note) даёт КОРОТКОЕ имя без этого хвоста. Без второго ключа locByName.get(name)
+  // на короткое имя никогда не находил такую карточку — синк молча пропускал её на
+  // каждом сохранении (loc === undefined → continue), без единого warning
+  // (тот же класс бага, что был исправлен на клиенте в _locNameKnown, 2026-08-06).
+  const locByName = new Map();
+  for (const l of locs) {
+    if (!l.title) continue;
+    if (!locByName.has(l.title)) locByName.set(l.title, l);
+    const shortTitle = l.title.split(/\s+—\s+/)[0].trim();
+    if (shortTitle && !locByName.has(shortTitle)) locByName.set(shortTitle, l);
+  }
+
+  for (const [name, rec] of prevByName) {
+    if (currByName.has(name)) continue;
+    const loc = locByName.get(name);
+    const conf = SIGNIFICANT_PLACE_TYPES[rec.type];
+    if (!loc || !conf) continue;
+    const current = loc[conf.field] || '';
+    // Значение теперь чистый тип (без маркера/заметки, §2 техспеки) — сброс только
+    // по точному совпадению, не startsWith (та проверка была нужна ТОЛЬКО пока
+    // заметка дописывалась в то же поле).
+    if (current.trim() !== conf.value) continue;
+    try { await writeLocationVtmTableField(city, loc.slug, conf.field, ''); }
+    catch (e) { warnings.push(`Не удалось сбросить «Статус» у локации «${name}»: ${e.message}`); }
+  }
+  for (const [name, rec] of currByName) {
+    const loc = locByName.get(name);
+    const conf = SIGNIFICANT_PLACE_TYPES[rec.type];
+    if (!loc || !conf) continue;
+    const current = loc[conf.field] || '';
+    const value = conf.value; // чистый тип — заметка (rec.note) в поле локации не пишется
+    if (current.trim() === value) continue; // уже актуально
+    try { await writeLocationVtmTableField(city, loc.slug, conf.field, value); }
+    catch (e) { warnings.push(`Не удалось записать «Статус» локации «${name}»: ${e.message}`); }
+  }
+  return warnings;
+}
+
+// PUT /api/cities/:slug — edit city.md. Body: { cityMd } (raw, full replace — preserves
+// custom/hand-written sections) OR { fields:{display,year,...} } (rebuild from template).
+router.put('/api/cities/:slug', express.json(), async (req, res) => {
+  try {
+    const slug = req.params.slug;
+    if (!/^[a-z0-9_]+$/.test(slug)) return res.status(400).json({ error: 'Недопустимый слаг города' });
+    if (!(await listCities()).includes(slug)) return res.status(404).json({ error: 'Город не найден' });
+
+    const b = req.body || {};
+    // Состояние ДО сохранения — для диффа с «Картой фракций» (существующий путь) и,
+    // новое здесь, с карточками персонажей/локаций (§4.2/§5.1-5.2 техспеки). Читаем
+    // обе секции сразу за один проход по старому city.md, а не по одной на секцию.
+    let prevRoles = [], prevPoliticalRecords = [], prevLocationRecords = [];
+    if (b.fields && (typeof b.fields.political === 'string' || typeof b.fields.locations === 'string')) {
+      try {
+        const oldMd = await fs.readFile(path.join(cityDir(slug), 'city.md'), 'utf-8');
+        const oldSections = parseCityMd(oldMd).sections || {};
+        if (typeof b.fields.political === 'string') {
+          prevPoliticalRecords = parsePoliticalRecords((oldSections.political || '').split('\n'));
+          prevRoles = prevPoliticalRecords.map(r => r.role).filter(Boolean);
+        }
+        if (typeof b.fields.locations === 'string') {
+          prevLocationRecords = parseLocationRecords((oldSections.locations || '').split('\n'));
+        }
+      } catch {}
+    }
+    let cityMd;
+    const sectionsWritten = [];
+    if (typeof b.cityMd === 'string' && b.cityMd.trim()) {
+      cityMd = b.cityMd.replace(/^﻿/, '');
+    } else if (b.fields && typeof b.fields === 'object') {
+      // Год валидируем так же, как в POST: иначе через форму редактирования в H1
+      // попадал произвольный текст и расходился по шапкам карточек (§A6.1).
+      if (typeof b.fields.year === 'string' && b.fields.year.trim()
+          && !/^\d{3,4}$/.test(b.fields.year.trim()))
+        return res.status(400).json({ error: 'Год — это 3–4 цифры (например 2010)' });
+
+      // Точечная правка вместо buildCityMd-ребилда (§A1): пересборка из 16 канонических
+      // секций уничтожала рукописные секции и форматирование (таблицы/блок-цитаты/###),
+      // из-за чего вкладка «Поля» была запрещена таким городам.
+      const current = await fs.readFile(path.join(cityDir(slug), 'city.md'), 'utf-8').catch(() => null);
+      if (current === null) return res.status(404).json({ error: 'city.md не найден' });
+
+      const currentParsed = parseCityMd(current);
+      cityMd = setCityTitle(current, b.fields.display, b.fields.year);
+      if (typeof b.fields.description === 'string' && b.fields.description.trim() !== (currentParsed.description || '').trim())
+        cityMd = setCityDescription(cityMd, b.fields.description);
+
+      for (const [key, heading] of CITY_SECTIONS) {
+        if (typeof b.fields[key] !== 'string') continue;  // ключ не пришёл — секцию не трогаем
+        // Пропускаем секции, которых пользователь не менял. Это не оптимизация, а
+        // сохранность данных: форма показывает УПЛОЩЁННЫЙ parseCityMd-текст (буллеты
+        // сняты, пустые строки и «---» отброшены), и запись его обратно превратила бы
+        // блок-цитаты и ###-подзаголовки рукописного города в буллеты. Пока значение
+        // не тронуто — не трогаем и секцию, её исходный markdown остаётся как есть.
+        if (b.fields[key].trim() === (currentParsed.sections[key] || '').trim()) continue;
+        if (key === 'landmarks') {
+          // «Значимые места» (view-tabs §V5, 2026-08-04) приходят с клиента уже
+          // готовой markdown-таблицей `| Название | Описание |` — upsertCitySectionFromForm
+          // прогнал бы её через citySectionBody (бул­летизация каждой строки без «-»)
+          // и сломал бы таблицу с первого же сохранения. Пишем как есть, тем же
+          // приёмом, что уже применяют keyPoints/vtmText в routes/locations.js.
+          const { text, created } = upsertCitySection(cityMd, heading, b.fields[key]);
+          cityMd = text;
+          sectionsWritten.push(created ? `${key} (создана)` : key);
+          continue;
+        }
+        const { text, created } = upsertCitySectionFromForm(cityMd, heading, b.fields[key]);
+        cityMd = text;
+        sectionsWritten.push(created ? `${key} (создана)` : key);
+      }
+    } else {
+      return res.status(400).json({ error: 'Нужно передать cityMd (markdown) или fields' });
+    }
+    if (!/^#\s+\S/m.test(cityMd)) return res.status(400).json({ error: 'city.md должен начинаться с заголовка # …' });
+
+    await writeFileAtomic(path.join(cityDir(slug), 'city.md'), cityMd, 'utf-8');
+    const parsed = parseCityMd(cityMd);
+    const warnings = [];
+    // Отразить политический состав в archive/political_state.md «Фракции».
+    if (b.fields && typeof b.fields.political === 'string') {
+      const newPoliticalRecords = parsePoliticalRecords(b.fields.political.split('\n'));
+      await syncPoliticalStateTable(slug, newPoliticalRecords, prevRoles).catch(() => {});
+      // «Иерархия» на карточках персонажей — город → персонаж (§4.2/§4.4 техспеки).
+      const cityDisplay = (b.fields.display || parsed.display || slug).trim();
+      warnings.push(...await syncPoliticalCharacterHierarchy(slug, cityDisplay, newPoliticalRecords, prevPoliticalRecords));
+    }
+    // zone/control на карточках локаций — город → локация (§5.1-5.2 техспеки).
+    if (b.fields && typeof b.fields.locations === 'string') {
+      const newLocationRecords = parseLocationRecords(b.fields.locations.split('\n'));
+      warnings.push(...await syncSignificantPlaceStatus(slug, newLocationRecords, prevLocationRecords));
+    }
+    invalidateChars(slug);
+    console.log(`[edit-city] ${slug}`);
+    res.json({
+      ok: true, slug, parsed,
+      ...(sectionsWritten.length ? { sectionsWritten } : {}),
+      ...(warnings.length ? { warnings } : {}),
+    });
+  } catch (e) {
+    console.error('[edit-city]', e.message);
+    serverError(res, e);
+  }
+});
+
+// DELETE /api/cities/:slug — soft-delete (move to cities/_deleted/<slug>), reversible and
+// image-safe (gitignored art is moved, not erased). Refuses to delete the last city.
+router.delete('/api/cities/:slug', async (req, res) => {
+  try {
+    const slug = req.params.slug;
+    if (!/^[a-z0-9_]+$/.test(slug)) return res.status(400).json({ error: 'Недопустимый слаг города' });
+    const cities = await listCities();
+    if (!cities.includes(slug)) return res.status(404).json({ error: 'Город не найден' });
+    if (cities.length <= 1) return res.status(409).json({ error: 'Нельзя удалить единственный город' });
+
+    const deletedDir = path.join(CITIES_DIR, '_deleted');
+    await fs.mkdir(deletedDir, { recursive: true });
+    const dest = path.join(deletedDir, `${slug}_${Date.now()}`);
+    await fs.rename(cityDir(slug), dest);
+
+    invalidateChars(slug);
+    console.log(`[delete-city] ${slug} → ${path.relative(ROOT, dest)}`);
+    res.json({ ok: true, slug, movedTo: path.relative(ROOT, dest).replace(/\\/g, '/') });
+  } catch (e) {
+    console.error('[delete-city]', e.message);
+    serverError(res, e);
+  }
+});
+
+// ── District (Район) — новая сущность, план 2026-08-02-city-creation-restructure ─────
+// Файл-карточка района — cities/<city>/locations/<rayon-slug>/district.md, единый
+// источник шаблона с tools/new_district.js (buildDistrictMd/parseDistrictMd,
+// web/lib/parsers/district.js). Только create/read/update — DELETE вне скоупа (§2.4
+// техспеки: удаление района с локациями внутри — отдельная, более рискованная задача).
+
+// Служебные папки locations/, которые физически могут содержать district.md
+// (или сами по себе — директории), но районами не являются: `_deleted` —
+// корзина мягкого удаления (db.js/cities.js/locations.js уже пропускают её
+// везде при обходе), `drugie` (slugify('Другие')) — служебный отстойник для
+// локаций без явной привязки (см. routes/locations.js: `distFolder =
+// slugify(district) || 'Другие'`), у него тоже может завестись district.md
+// (например, если через него когда-то физически перемещали локацию), но в
+// списке «Районы» ему делать нечего — это не редактируемая сущность.
+const DEFAULT_DISTRICT_SLUG = slugify('Другие');
+
+// Читает список районов города напрямую с диска — та же логика, что у GET ниже,
+// но переиспользуется и синком секции «## Районы» (не завязана на req/res).
+async function _listDistricts(slug) {
+  const root = locsDir(slug);
+  let entries;
+  try { entries = await fs.readdir(root, { withFileTypes: true }); } catch { entries = []; }
+  const out = [];
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    if (e.name.startsWith('_') || e.name === DEFAULT_DISTRICT_SLUG) continue;
+    const districtFile = path.join(root, e.name, DISTRICT_FILENAME);
+    const raw = await fs.readFile(districtFile, 'utf-8').catch(() => null);
+    if (raw === null) continue;
+    const { name, type, sect, clan, description } = parseDistrictMd(raw);
+    out.push({ slug: e.name, name: name || e.name, type, sect, clan, description });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  return out;
+}
+
+// Секция «## Районы» в city.md — ОДНОСТОРОННЕЕ зеркало district.md-сущностей (§A3.2,
+// решение ОВ-2: district.md остаётся единственным источником истины, дублировать
+// тип/секту/клан в текст секции не нужно — они уже там). Перестраивается целиком при
+// любой мутации района: по буллету на имя, в том же порядке, что отдаёт GET /districts.
+// replaceCitySectionBullets (не upsert!) — та же семантика, что у уже принятого
+// _syncCityFactionsList (routes/archive.js, §11): если секции «## Районы» в файле нет
+// вообще (рукописный city.md без нужной секции), синк молча пропускается с warning,
+// новую секцию сюрпризом не создаём. Non-blocking — район уже сохранён к моменту
+// вызова, сбой записи city.md его не откатывает.
+async function _syncCityDistrictsList(slug) {
+  try {
+    const file = path.join(cityDir(slug), 'city.md');
+    const raw = await fs.readFile(file, 'utf-8').catch(() => null);
+    if (raw === null) return null;
+    const names = (await _listDistricts(slug)).map(d => d.name);
+    const updated = replaceCitySectionBullets(raw, 'Районы', names);
+    if (updated === null) return 'Район сохранён, но в city.md не найдена секция «Районы» — синк пропущен';
+    if (updated === raw) return null; // уже актуально
+    await writeFileAtomic(file, updated, 'utf-8');
+    return null;
+  } catch (e) {
+    return `Район сохранён, но не удалось синхронизировать список «Районы» в описании города: ${e.message}`;
+  }
+}
+
+// GET /api/cities/:slug/districts — список районов города: [{slug, name, type, sect, clan, description}].
+router.get('/api/cities/:slug/districts', async (req, res) => {
+  try {
+    const slug = req.params.slug;
+    if (!(await listCities()).includes(slug)) return res.status(404).json({ error: 'Город не найден' });
+    res.json(await _listDistricts(slug));
+  } catch (e) { serverError(res, e); }
+});
+
+// POST /api/cities/:slug/districts — создать район. Body: { name, type?, sect?, clan?, description? }.
+router.post('/api/cities/:slug/districts', express.json(), async (req, res) => {
+  try {
+    const slug = req.params.slug;
+    if (!(await listCities()).includes(slug)) return res.status(404).json({ error: 'Город не найден' });
+
+    const b = req.body || {};
+    const name = String(b.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Укажи название района' });
+    const districtSlug = slugify(name);
+    if (!districtSlug) return res.status(400).json({ error: 'Не удалось сформировать слаг из названия' });
+
+    const districtDir = path.join(locsDir(slug), districtSlug);
+    if (await fs.access(districtDir).then(() => true, () => false)) {
+      return res.status(409).json({ error: `Район «${districtSlug}» уже существует` });
+    }
+
+    const md = buildDistrictMd({ name, type: b.type, sect: b.sect, clan: b.clan, description: b.description });
+    await fs.mkdir(districtDir, { recursive: true });
+    await writeFileAtomic(path.join(districtDir, DISTRICT_FILENAME), md, 'utf-8');
+    const warning = await _syncCityDistrictsList(slug);
+
+    console.log(`[create-district] ${slug}/${districtSlug} («${name}»)`);
+    res.json({ ok: true, slug: districtSlug, ...parseDistrictMd(md), ...(warning ? { warning } : {}) });
+  } catch (e) {
+    console.error('[create-district]', e.message);
+    serverError(res, e);
+  }
+});
+
+// PUT /api/cities/:slug/districts/:districtSlug — частичная правка полей district.md.
+// НЕ переименовывает/не переносит папку — «name» меняет только текст «Название» внутри
+// карточки, слаг папки/URL остаётся прежним (см. техспека §2.4).
+router.put('/api/cities/:slug/districts/:districtSlug', express.json(), async (req, res) => {
+  try {
+    const { slug, districtSlug } = req.params;
+    if (!(await listCities()).includes(slug)) return res.status(404).json({ error: 'Город не найден' });
+    if (!/^[a-z0-9_]+$/.test(districtSlug)) return res.status(400).json({ error: 'Недопустимый слаг района' });
+
+    const districtFile = path.join(locsDir(slug), districtSlug, DISTRICT_FILENAME);
+    const raw = await fs.readFile(districtFile, 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'Район не найден' });
+
+    const b = req.body || {};
+    const current = parseDistrictMd(raw);
+    const merged = {
+      name:        b.name        !== undefined ? String(b.name).trim()        : current.name,
+      type:        b.type        !== undefined ? String(b.type).trim()        : current.type,
+      sect:        b.sect        !== undefined ? String(b.sect).trim()        : current.sect,
+      clan:        b.clan        !== undefined ? String(b.clan).trim()        : current.clan,
+      description: b.description !== undefined ? String(b.description).trim() : current.description,
+    };
+    if (!merged.name) return res.status(400).json({ error: 'Название района не может быть пустым' });
+
+    const md = buildDistrictMd(merged);
+    await writeFileAtomic(districtFile, md, 'utf-8');
+    const warning = await _syncCityDistrictsList(slug);
+
+    console.log(`[edit-district] ${slug}/${districtSlug}`);
+    res.json({ ok: true, slug: districtSlug, ...parseDistrictMd(md), ...(warning ? { warning } : {}) });
+  } catch (e) {
+    console.error('[edit-district]', e.message);
+    serverError(res, e);
+  }
+});
+
+// DELETE /api/cities/:slug/districts/:districtSlug — soft-delete района (§A5).
+// Запрещено для НЕПУСТОГО района (§16.3-style явная 409, а не тихий авто-перенос
+// локаций куда-то): перенос был бы fs.rename каждой локации + правка ссылок (§B1) +
+// правка «**Район:**» на карточке — молча выполнять цепочку побочных эффектов по
+// одному клику «Удалить» опаснее, чем показать явную ошибку и попросить пользователя
+// сначала разобраться с локациями. Мягко — в locations/_deleted/, симметрично
+// DELETE /api/locations/:slug; обходы районов/локаций уже пропускают «_»-папки.
+router.delete('/api/cities/:slug/districts/:districtSlug', async (req, res) => {
+  try {
+    const { slug, districtSlug } = req.params;
+    if (!(await listCities()).includes(slug)) return res.status(404).json({ error: 'Город не найден' });
+    if (!/^[a-z0-9_]+$/.test(districtSlug)) return res.status(400).json({ error: 'Недопустимый слаг района' });
+
+    const districtDir = path.join(locsDir(slug), districtSlug);
+    const districtFile = path.join(districtDir, DISTRICT_FILENAME);
+    if (!(await fs.readFile(districtFile, 'utf-8').catch(() => null)))
+      return res.status(404).json({ error: 'Район не найден' });
+
+    const entries = await fs.readdir(districtDir, { withFileTypes: true });
+    const locationDirs = entries.filter(e => e.isDirectory()).map(e => e.name);
+    if (locationDirs.length) {
+      return res.status(409).json({
+        error: `В районе «${districtSlug}» есть локации (${locationDirs.length}) — перенесите или удалите их сначала`,
+        locations: locationDirs,
+      });
+    }
+
+    const trashRoot = path.join(locsDir(slug), '_deleted');
+    await fs.mkdir(trashRoot, { recursive: true });
+    await fs.rename(districtDir, path.join(trashRoot, `district_${districtSlug}_${Date.now()}`));
+    const warning = await _syncCityDistrictsList(slug);
+
+    console.log(`[delete-district] ${slug}/${districtSlug}`);
+    res.json({ ok: true, ...(warning ? { warning } : {}) });
+  } catch (e) {
+    console.error('[delete-district]', e.message);
+    serverError(res, e);
+  }
+});
+
+// ── Виды связей — документ города (техспека 2026-08-26) ───────────────────────
+// cities/<город>/rules/relation_types.md, два раздела: «Постоянные» и «Авторские».
+// Раньше это был глобальный system/library/relation-types.json (маршруты
+// /api/library/relation-types) — авторский вид, заведённый для Парижа, появлялся
+// и в Лондоне, и в Праге. Теперь словарь принадлежит городу; сид остался эталоном
+// для каркаса нового города и списком защищённых от правки канонических видов.
+
+// Сколько КАРТОЧЕК сейчас использует вид — число для диалога подтверждения при
+// переименовании/удалении: карточки мы не переписываем, но владелец данных должен
+// видеть масштаб расхождения, которое создаёт. Считаем резолвером, а не по буквальному
+// `[Тип]`: на легаси-карточках поле пустое, и вид опознаётся по имени/ключевым словам
+// в описании — такие связи используют вид ничуть не меньше.
+async function _relTypeUsage(citySlug, doc) {
+  const usage = new Map();
+  let chars = [];
+  try { chars = await getAllCharacters(citySlug); } catch { return usage; }
+  const resolve = makeRelationResolver(doc);
+  for (const c of chars) {
+    const own = new Set();
+    for (const r of (c.relationships || [])) {
+      const m = resolve(r.relType, r.description);
+      if (m && !m.unknown) own.add(m.slug);
+    }
+    for (const slug of own) usage.set(slug, (usage.get(slug) || 0) + 1);
+  }
+  return usage;
+}
+
+function _relTypeView(e, usage) {
+  return {
+    slug: e.slug, name: e.name, color: e.color,
+    pair: e.pair || '', keywords: e.keywords || [],
+    canon: isCanonSlug(e.slug), usage: usage.get(e.slug) || 0,
+  };
+}
+
+// Общий guard: город существует и слаг безопасен для path.join.
+async function _relCity(req, res) {
+  const slug = req.params.slug;
+  if (!/^[a-z0-9_]+$/.test(slug)) { res.status(400).json({ error: 'Недопустимый слаг города' }); return null; }
+  if (!(await listCities()).includes(slug)) { res.status(404).json({ error: 'Город не найден' }); return null; }
+  return slug;
+}
+
+// Проверка имени нового/переименованного вида. exceptSlug — строка, которую правим
+// (её собственное имя конфликтом не считается).
+function _validateRelName(doc, name, exceptSlug) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return { error: 'Название обязательно' };
+  const key = trimmed.toLowerCase();
+  // «Нейтральный»/«Агрегировано» — не виды связи, а служебные ключи графа (§3.3):
+  // попав в документ, они стали бы переименовываемыми и удаляемыми, и граф остался
+  // бы без фоллбэка для нераспознанных связей.
+  if (RESERVED_NAMES.has(key)) return { error: `«${trimmed}» — служебное имя графа, его нельзя использовать`, status: 400 };
+  const slug = slugify(trimmed);
+  if (!slug) return { error: 'Не удалось построить слаг из названия', status: 400 };
+  if (RESERVED_SLUGS.has(slug)) return { error: `Слаг «${slug}» зарезервирован графом`, status: 400 };
+  const all = [...doc.permanent, ...doc.authored];
+  if (all.some(e => e.slug !== exceptSlug && e.name.toLowerCase() === key))
+    return { error: 'Вид связи с таким названием уже есть в этом городе', status: 409 };
+  return { name: trimmed, slug };
+}
+
+router.get('/api/cities/:slug/relation-types', async (req, res) => {
+  try {
+    const city = await _relCity(req, res); if (!city) return;
+    const doc = await readRelationTypesDoc(city);
+    const usage = await _relTypeUsage(city, doc);
+    res.json({
+      permanent: doc.permanent.map(e => _relTypeView(e, usage)),
+      authored:  doc.authored.map(e => _relTypeView(e, usage)),
+    });
+  } catch (e) { serverError(res, e); }
+});
+
+// Добавление из модалки «Связи» — запись сразу в «Постоянные» (§4.2). Цвет ВСЕГДА
+// генерирует сервер, клиент его не передаёт.
+router.post('/api/cities/:slug/relation-types', express.json(), async (req, res) => {
+  try {
+    const city = await _relCity(req, res); if (!city) return;
+    const doc = await readRelationTypesDoc(city);
+    const v = _validateRelName(doc, (req.body || {}).name, null);
+    if (v.error) return res.status(v.status || 400).json({ error: v.error });
+    if ([...doc.permanent, ...doc.authored].some(e => e.slug === v.slug))
+      return res.status(409).json({ error: 'Связь с таким названием уже есть', slug: v.slug });
+    const entry = { slug: v.slug, name: v.name, color: randomRelColor(), pair: '', keywords: [] };
+    doc.permanent.push(entry);
+    await writeRelationTypesDoc(city, doc);
+    res.json({ ok: true, slug: entry.slug, color: entry.color });
+  } catch (e) { serverError(res, e); }
+});
+
+// Переименование меняет ТОЛЬКО колонку «Вид». Карточки персонажей не трогаем:
+// массовая перезапись личных файлов хроники необратима и должна быть отдельным
+// осознанным действием владельца данных, а не побочным эффектом правки словаря.
+// Сколько карточек при этом разойдётся с документом, клиент показывает в диалоге
+// подтверждения — берёт число из поля usage в GET.
+router.put('/api/cities/:slug/relation-types/:typeSlug', express.json(), async (req, res) => {
+  try {
+    const city = await _relCity(req, res); if (!city) return;
+    const { typeSlug } = req.params;
+    if (isCanonSlug(typeSlug)) return res.status(403).json({ error: 'Канонические виды связи нельзя переименовывать' });
+    const doc = await readRelationTypesDoc(city);
+    const section = doc.permanent.some(e => e.slug === typeSlug) ? doc.permanent : doc.authored;
+    const idx = section.findIndex(e => e.slug === typeSlug);
+    if (idx === -1) return res.status(404).json({ error: 'Вид связи не найден' });
+    const v = _validateRelName(doc, (req.body || {}).name, typeSlug);
+    if (v.error) return res.status(v.status || 400).json({ error: v.error });
+    // Слаг НЕ пересчитываем: по нему ключуются рёбра графа, фильтр и маркеры —
+    // переименование не должно перекрашивать граф (§3.1).
+    section[idx] = { ...section[idx], name: v.name };
+    await writeRelationTypesDoc(city, doc);
+    res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+router.delete('/api/cities/:slug/relation-types/:typeSlug', async (req, res) => {
+  try {
+    const city = await _relCity(req, res); if (!city) return;
+    const { typeSlug } = req.params;
+    if (isCanonSlug(typeSlug)) return res.status(403).json({ error: 'Канонические виды связи нельзя удалять' });
+    const doc = await readRelationTypesDoc(city);
+    const section = doc.permanent.some(e => e.slug === typeSlug) ? doc.permanent : doc.authored;
+    const idx = section.findIndex(e => e.slug === typeSlug);
+    if (idx === -1) return res.status(404).json({ error: 'Вид связи не найден' });
+    section.splice(idx, 1);
+    await writeRelationTypesDoc(city, doc);
+    res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// «Сделать постоянной» (§4.3) — ПЕРЕНОС строки между разделами одного файла, а не
+// создание новой записи (как делал прежний POST в глобальную библиотеку): слаг, цвет,
+// пара и ключевые слова сохраняются, поэтому граф не перекрашивается, а фильтр не
+// теряет чип.
+router.post('/api/cities/:slug/relation-types/:typeSlug/promote', async (req, res) => {
+  try {
+    const city = await _relCity(req, res); if (!city) return;
+    const { typeSlug } = req.params;
+    const doc = await readRelationTypesDoc(city);
+    const idx = doc.authored.findIndex(e => e.slug === typeSlug);
+    if (idx === -1) {
+      return doc.permanent.some(e => e.slug === typeSlug)
+        ? res.status(409).json({ error: 'Этот вид связи уже постоянный' })
+        : res.status(404).json({ error: 'Вид связи не найден среди авторских' });
+    }
+    const [entry] = doc.authored.splice(idx, 1);
+    doc.permanent.push(entry);
+    await writeRelationTypesDoc(city, doc);
+    res.json({ ok: true, slug: entry.slug });
+  } catch (e) { serverError(res, e); }
+});
+
+module.exports = { router };
