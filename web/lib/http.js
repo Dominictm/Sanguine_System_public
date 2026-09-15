@@ -1,0 +1,162 @@
+'use strict';
+// Общая HTTP-инфраструктура для server.js и доменных роутеров (routes/*.js):
+// цвета терминала, унифицированный 500-ответ, rate-limit для AI-эндпоинтов.
+// Вынесено из server.js (E1.2).
+
+// ── Terminal colors ────────────────────────────────────────────────────────────
+const C = {
+  reset:  '\x1b[0m',
+  dim:    '\x1b[2m',
+  bold:   '\x1b[1m',
+  red:    '\x1b[31m',
+  green:  '\x1b[32m',
+  yellow: '\x1b[33m',
+  cyan:   '\x1b[36m',
+  magenta:'\x1b[35m',
+  gray:   '\x1b[90m',
+};
+
+// Unified 500 response. Always logs the full error (many per-route catches previously
+// returned e.message to the client WITHOUT logging it), and returns a stable envelope
+// instead of leaking internal messages/paths/stacks. Intentional user-facing errors
+// stay as their own explicit res.status(...).json({error: '…'}) calls.
+function serverError(res, e) {
+  console.error(`${C.red}[error]${C.reset}`, e?.stack || e?.message || e);
+  if (!res.headersSent) res.status(500).json({ error: 'Внутренняя ошибка сервера — подробности в логе сервера.' });
+}
+
+// ── Валидация загружаемого изображения (арт персонажа/локации) ───────────────
+// Клиентские accept="image/..." и поле ext — только подсказка UI, не защита:
+// сервер обязан сам проверить и расширение (белый список), и то, что байты
+// действительно начинаются с magic-number заявленного формата — иначе можно
+// сохранить произвольный файл (html/svg/js) под безобидным на вид полем
+// «Арт» и получить его назад через express.static с угадываемым Content-Type.
+const IMAGE_EXT_WHITELIST = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
+function validateImageUpload(base64, ext) {
+  const safeExt = String(ext || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (!IMAGE_EXT_WHITELIST.has(safeExt))
+    return { ok: false, error: 'Недопустимый формат файла (только jpg/jpeg/png/webp/gif)' };
+
+  let buf;
+  try { buf = Buffer.from(String(base64 || ''), 'base64'); } catch { buf = null; }
+  if (!buf || buf.length === 0)
+    return { ok: false, error: 'Некорректные данные изображения' };
+
+  // Each check only requires as many bytes as its own signature — a short-but-genuine
+  // PNG header shouldn't be rejected just because it's shorter than WEBP's 12-byte one.
+  const isJpeg = buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF;
+  const isPng  = buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47
+                 && buf[4] === 0x0D && buf[5] === 0x0A && buf[6] === 0x1A && buf[7] === 0x0A;
+  const isGif  = buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38
+                 && (buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61; // "GIF87a" / "GIF89a"
+  const isWebp = buf.length >= 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+                 buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50; // "RIFF"...."WEBP"
+  const matchesExt = { jpg: isJpeg, jpeg: isJpeg, png: isPng, gif: isGif, webp: isWebp }[safeExt];
+  if (!matchesExt)
+    return { ok: false, error: 'Содержимое файла не похоже на изображение заявленного формата' };
+
+  return { ok: true, ext: safeExt, buffer: buf };
+}
+
+// ── Rate-limit для AI-генерации ───────────────────────────────────────────────
+// Простой in-memory скользящий счётчик: 20 AI-вызовов в минуту с одного IP.
+// Защищает бюджет провайдеров от случайного спама (двойные клики, зацикленный скрипт).
+const AI_RATE_WINDOW = 60_000;
+const AI_RATE_LIMIT  = 20;
+const _aiCallLog = new Map(); // ip -> [timestamps]
+function aiRateLimit(req, res, next) {
+  const ip = req.ip || 'local';
+  const now = Date.now();
+  const log = (_aiCallLog.get(ip) || []).filter(t => now - t < AI_RATE_WINDOW);
+  if (log.length >= AI_RATE_LIMIT) {
+    return res.status(429).json({ ok: false, error: 'Слишком много запросов к AI. Подождите минуту.' });
+  }
+  log.push(now);
+  _aiCallLog.set(ip, log);
+  next();
+}
+setInterval(() => {
+  const cutoff = Date.now() - AI_RATE_WINDOW * 2;
+  for (const [ip, log] of _aiCallLog) {
+    const fresh = log.filter(t => t > cutoff);
+    if (fresh.length === 0) _aiCallLog.delete(ip);
+    else _aiCallLog.set(ip, fresh);
+  }
+}, 300_000).unref();
+
+// ── Retry-on-429 для прямых вызовов Anthropic SDK ─────────────────────────────
+// Ветка OpenRouter/OpenAI у каждого AI-эндпоинта сама перебирает модели и
+// пережидает 429 (см. routes/generation.js и др.) — но прямой вызов
+// client.messages.create() (claude-login OAuth / ANTHROPIC_API_KEY) этого не
+// делал: единичный временный rate-limit от Claude.ai сразу проваливал запрос.
+// Повторяет с бэкоффом (учитывая Retry-After, если он есть), затем сдаётся с
+// тем же {rateLimited:true}, что и OA-ветки.
+async function callAnthropicWithRetry(client, params, { attempts = 3, label = 'generation' } = {}) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await client.messages.create(params);
+    } catch (e) {
+      if (e.status !== 429) throw e;
+      lastErr = e;
+      if (i === attempts - 1) break;
+      const retryAfterSec = Number(e.headers?.['retry-after']) || 0;
+      const waitMs = retryAfterSec > 0 ? retryAfterSec * 1000 : 1000 * Math.pow(2, i);
+      console.warn(`[${label}] 429 от Anthropic, повтор через ${waitMs}мс (попытка ${i + 1}/${attempts})...`);
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+  const err = new Error('Превышен лимит запросов Claude. Подождите минуту и попробуйте снова.');
+  err.status = 429;
+  err.rateLimited = true;
+  throw err;
+}
+
+// ── AI-вызовы: провайдер/модель на успехе, статус+сообщение на ошибке ────────
+// До этого большинство `catch` вокруг генерации (fill.js, lifecycle.js,
+// scenario.js, locations.js и др.) логировали только `err.message` одной
+// строкой — не видно было, какой именно эндпойнт/шаг упал и через какого
+// провайдера. Из-за этого баг с захардкоженным Claude-ID модели, уходившим в
+// OpenRouter (см. коммит с исправлением _claudeOnlyModel), был совершенно
+// не виден в консоли сервера — просто пустой список локаций в ответе.
+function _logAiCall(label, gen) {
+  console.log(`${C.dim}[ai]${C.reset} ${label} → ${C.cyan}${gen?.source || '?'}${C.reset}${gen?.model ? ` (${gen.model})` : ''}`);
+}
+function _logAiFail(label, err, gen) {
+  const status = err?.status ?? err?.statusCode ?? '?';
+  console.warn(`${C.yellow}[ai-fail]${C.reset} ${label} — ${C.cyan}${gen?.source || '?'}${C.reset}${gen?.model ? ` (${gen.model})` : ''} — ${C.red}${status}${C.reset} ${err?.message || err}`);
+}
+
+// ── Валидация загружаемого аудио (звук саундборда) ────────────────────────────
+// Тот же риск, что закрывал validateImageUpload (FIX-1) для картинок, был открыт
+// для звука (FIX-18, docs/audit/2026-07-28-fix-plan.md): расширение бралось из
+// клиентского mimetype без проверки байт — подтверждено live загрузкой
+// <script>alert(1)</script> под видом .mp3, отданной обратно express.static().
+const AUDIO_EXT_WHITELIST = new Set(['mp3', 'ogg', 'wav']);
+function validateAudioUpload(base64, ext) {
+  // [^a-z0-9] (not [^a-z]) — unlike image extensions, 'mp3' has a digit that
+  // a letters-only strip would silently eat, turning it into 'mp' and always
+  // failing the whitelist check below.
+  const safeExt = String(ext || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!AUDIO_EXT_WHITELIST.has(safeExt))
+    return { ok: false, error: 'Недопустимый формат файла (только mp3/ogg/wav)' };
+
+  let buf;
+  try { buf = Buffer.from(String(base64 || ''), 'base64'); } catch { buf = null; }
+  if (!buf || buf.length === 0)
+    return { ok: false, error: 'Некорректные данные аудио' };
+
+  const isMp3 = buf.length >= 3 &&
+    ((buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) || // "ID3"
+     (buf[0] === 0xFF && (buf[1] & 0xE0) === 0xE0));            // MPEG frame sync
+  const isOgg = buf.length >= 4 && buf[0] === 0x4F && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53; // "OggS"
+  const isWav = buf.length >= 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+                buf[8] === 0x57 && buf[9] === 0x41 && buf[10] === 0x56 && buf[11] === 0x45; // "RIFF"...."WAVE"
+  const matchesExt = { mp3: isMp3, ogg: isOgg, wav: isWav }[safeExt];
+  if (!matchesExt)
+    return { ok: false, error: 'Содержимое файла не похоже на аудио заявленного формата' };
+
+  return { ok: true, ext: safeExt, buffer: buf };
+}
+
+module.exports = { C, serverError, aiRateLimit, callAnthropicWithRetry, _logAiCall, _logAiFail, validateImageUpload, validateAudioUpload };

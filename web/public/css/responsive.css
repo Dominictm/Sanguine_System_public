@@ -1,0 +1,627 @@
+/* ══════════════════════════════════════════════════════════════════════
+   responsive.css — все @media-запросы. Канонический CSS: править здесь.
+   Отсортировано по тирам: touch → phone → tablet → desktop → motion
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Responsive ── */
+/* Брейкпоинты: три именованных tier'а (techspec 2026-08-10-responsive-
+   adaptive-layout-techspec.md, R5). Существующие точки ниже (699/700/720/
+   820/900/960/1099) — content-driven, calibrated под конкретный компонент;
+   не переносить/не унифицировать без причины, это не одна и та же схема,
+   а набор точек, которые все укладываются в диапазоны tier'ов:
+     phone   (≤ 700px)    — сайдбар в icon-rail (см. ниже), grid → 1 колонка,
+                             таблицы/плотные сетки → карточки.
+     tablet  (701-1023px) — 2-колоночные гибриды; существующие 720/820/900/960
+                             живут внутри этой полосы под свой компонент.
+     desktop (≥ 1024px)   — полные сетки, сайдбар развёрнут.
+   Новый компонент сверяется с парой 700/1023 как базовой; отклонение —
+   только если контент реально ломается в другой точке (тоже content-driven,
+   просто задокументированное комментарием у самого правила). */
+/* Tablet / small-laptop: tighten gutters, let multi-column forms and module
+   header buttons wrap instead of squeezing. */
+
+/* ── TOUCH (24 blocks) ── */
+/* L575–L578 */
+@media (pointer: coarse) {
+  .sidebar-about-btn,
+  .sidebar-boosty-link { min-width: 44px; min-height: 44px; }
+}
+
+/* L1112–L1120 */
+@media (pointer: coarse) {
+  .ais-feat-card .ais-feat-prov-btn {
+    min-height: 44px;
+  }
+
+  .ais-feat-model-select {
+    min-height: 44px;
+  }
+}
+
+/* L1422–L1424 */
+@media (pointer: coarse) {
+  .dash-stale-row { min-height: 44px; }
+}
+
+/* L2504–L2506 */
+@media (pointer: coarse) {
+  .graph-filter-chip { min-height: 44px; }
+}
+
+/* L3437–L3471 */
+@media (pointer: coarse) {
+
+  .btn-icon, .tab-btn, .chron-tab, .modp-tab, .cdet-tab, .chr-detail-tab,
+  .mod-fill-add-btn, .chd-recap-btn, .chr-modal-btn, .modp-back-btn,
+  .modp-gen-btn, .modp-close-btn, .modp-del-btn, .chr-delete-btn,
+  .chp-create-btn, .btn-create-char, .filter-select, .filter-input,
+  .form-control, .ais-input, .ais-select, .chr-form-input,
+  .city-edit-btn, .city-del-btn, .mod-gen-scenario-btn, .nav-item,
+  .nav-group-toggle, .nav-flyout-item,
+  .cdet-faction-chip, .modp-edit-btn,
+  .tour-replay-btn, .city-switch-add, .chd-dir-btn, button.chron-chip,
+  .chron-toggle, .sess-scene-btn, .modp-session-edit, .modp-session-delete,
+  .cdet-rel-add-btn, .cdet-rel-del-btn, .city-districts-add-btn, .city-district-del-btn,
+  .city-district-add-loc-btn, .btn-submit {
+    min-height: 44px;
+  }
+
+  .modp-field-regen-btn, .field-tip {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* .btn-icon уже получает min-height: 44px выше; #btn-reset (тикет 4.1) теперь
+     содержит только символ «↺» без текста — без явного min-width узкая иконочная
+     кнопка не дотягивает до 44px по ширине на touch. Та же история у стрелок
+     навигации сцен (только «←»/«→», без слова «Сцена»). */
+  .btn-icon, .sess-scene-btn {
+    min-width: 44px;
+  }
+
+  .modal-close, .info-close, .chr-detail-close, .lightbox-close, .cdet-delete-btn, .cdet-prompt-copy {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* L4311–L4311 */
+@media (pointer: coarse) { .cdet-lib-pick-btn { width: 44px; height: 44px; } }
+
+/* L4994–L4996 */
+@media (pointer: coarse) {
+  .cdet-rel-mutual { min-height: 44px; }
+}
+
+/* L5064–L5066 */
+@media (pointer: coarse) {
+  .cdet-familiar-open-btn { min-height: 44px; }
+}
+
+/* L5953–L5958 */
+@media (pointer: coarse) {
+  .chd-dir-btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+}
+
+/* L6003–L6007 */
+@media (pointer: coarse) {
+  .chd-dir-close {
+    min-height: 44px;
+  }
+}
+
+/* L6312–L6314 */
+@media (pointer: coarse) {
+  .relmgr-item-edit, .relmgr-item-del, .relmgr-item-promote { min-height: 44px; }
+}
+
+/* L9172–L9174 */
+@media (pointer: coarse) {
+  .bkp-city-row { min-height: 44px; }
+}
+
+/* Trash tab (Инструменты → 🗑️ Удалённые) — touch-цели ≥44px */
+@media (pointer: coarse) {
+  .trs-row { min-height: 44px; gap: 12px; }
+  .trs-all-row { min-height: 44px; }
+  .trs-actions { gap: 12px; }
+  .trs-act { width: 44px; height: 44px; }
+  .trs-all { min-height: 44px; }
+}
+
+/* L10078–L10082 */
+@media (pointer: coarse) {
+  .modp-promote-btn {
+    min-height: 44px;
+  }
+}
+
+/* L10102–L10107 */
+@media (pointer: coarse) {
+  .modp-npc-del-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* L10535–L10548 */
+@media (pointer: coarse) {
+  .sheet-add-btn {
+    min-height: 44px;
+  }
+
+  .sheet-row-remove {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .sheet-lib-item {
+    min-height: 44px;
+  }
+}
+
+/* L10605–L10613 */
+@media (pointer: coarse) {
+  .v20-lib-add-btn {
+    min-height: 44px;
+  }
+
+  .v20-lib-item {
+    min-height: 44px;
+  }
+}
+
+/* L11485–L11487 */
+@media (pointer: coarse) {
+  .lib-card-action-btn { width: 44px; height: 44px; }
+}
+
+/* L12296–L12306 */
+@media (pointer: coarse) {
+  .v20-dot {
+    width: 18px;
+    height: 18px;
+  }
+
+  .v20-box {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* L13735–L13745 */
+@media (pointer: coarse) {
+  .tour-replay-btn,
+  .sidebar-collapse-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .tour-btn {
+    min-height: 44px;
+  }
+}
+
+/* L13824–L13828 */
+@media (pointer: coarse) {
+  .loc-edit-regen-btn {
+    min-height: 44px;
+  }
+}
+
+/* L13892–L13898 */
+@media (pointer: coarse) {
+
+  .modp-locs-add-btn,
+  .modp-locs-new-btn {
+    min-height: 44px;
+  }
+}
+
+/* L13994–L13999 */
+@media (pointer: coarse) {
+  .modp-loc-card-unlink, .modp-npc-card-del, .loc-card-del-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* L14001–L14016 */
+@media (pointer: coarse) {
+
+  .hooks-del-btn, .cdet-img-del-btn, .diary-item-del-btn,
+  .v20-row-remove-btn, .v20-disc-info-btn, .v20-add-row-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .cdet-carousel-btn {
+    min-width: 44px;
+  }
+
+  .locdet-carousel-btn {
+    min-width: 44px;
+  }
+}
+
+/* L14129–L14131 */
+@media (pointer: coarse) {
+  .modp-locs-attach-btn, .modp-locs-create-btn { min-height: 44px; }
+}
+
+/* ── PHONE (9 blocks) ── */
+/* L1051–L1055 */
+@media (max-width: 460px) {
+  .ais-feat-card-radios {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* L2043–L2048 */
+@media (max-width: 699px) {
+  .chars-belonging-tabs .chron-tab {
+    padding: 9px 8px;
+    letter-spacing: .02em;
+  }
+}
+
+/* Вкладки библиотеки (7 штук с flex:1) и «Инструментов» (5 штук с подписями
+   с эмодзи) на узкой колонке планшета/телефона не влезают в строку и распирают
+   страницу по горизонтали (проверено на 601px: правая кромка доходила до 652px
+   за пределы 601px вьюпорта). Вместо переноса на новый ряд — горизонт-скролл
+   ленты (стандартный паттерн таб-стрипов): кнопки сохраняют ширину по контенту,
+   лента прокручивается, страница не переполняется. */
+@media (max-width: 699px) {
+  .tab-bar,
+  .merits-subtab-bar,
+  .flaws-subtab-bar,
+  .backgrounds-subtab-bar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .tab-bar .tab-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Библиотека — равноширокие вкладки и тут, но с разрешением на прокрутку;
+     flex:1 0 auto = равная ширина при достатке места, жёсткая база без сжатия. */
+  #page-library .tab-bar .tab-btn,
+  .merits-subtab-btn,
+  .flaws-subtab-btn,
+  .backgrounds-subtab-btn {
+    flex: 1 0 auto;
+    white-space: nowrap;
+  }
+}
+
+/* L3163–L3218; планшетный рейл: сайдбар схлопывается в иконочную полосу
+   52px не только на телефоне (700px), но и на планшетах в портрете
+   601–900px (768×1024, 800×1280, 810×1080, 820×1180) — развёрнутое меню
+   210px съедало бы ~27% и без того узкой ширины планшета. Ландшафтный
+   планшет (1280×800) и ПК шире 900px сохраняют развёрнутый сайдбар. */
+@media (max-width: 900px) {
+  #sidebar {
+    width: 52px;
+    min-width: 52px;
+  }
+
+  .logo-text, .nav-item span:last-child {
+    display: none;
+  }
+
+  /* Шапка рейла — та же перестройка в колонку, что у #sidebar.collapsed
+     (layout.css): иначе .sidebar-logo-actions с тумблером темы остаётся
+     строкой 52px и обрезается правым краем. */
+  .sidebar-logo {
+    padding: 20px 14px;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .sidebar-logo-actions {
+    margin-left: 0;
+    gap: 0;
+  }
+
+  .nav-item {
+    padding: 12px 18px;
+  }
+
+  /* Второй источник рейла: класса .collapsed здесь нет, поэтому правила групп
+     из блока #sidebar.collapsed приходится повторить — иначе на узком окне
+     меню осталось бы развёрнутым списком в колонке 52px. */
+  .nav-group-label,
+  .nav-group-chevron {
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+  }
+
+  .nav-group-chevron {
+    margin-left: 0;
+  }
+
+  .nav-group-toggle {
+    justify-content: center;
+    gap: 0;
+    padding: 14px 0;
+  }
+
+  .nav-group-icon {
+    font-size: var(--fs-lg);
+    opacity: .85;
+  }
+
+  .nav-group-toggle.has-active {
+    border-left-color: var(--accent-strong);
+    background: var(--nav-tint-group-active);
+  }
+
+  .nav-group-items {
+    display: none;
+  }
+
+  /* Рейл 52px не даёт выложить футер в строку (тема+тур+Dark Pack+Boosty
+     вместе шире рейла) — та же перестройка в колонку, что у #sidebar.collapsed
+     (layout.css), здесь класса .collapsed нет. */
+  .sidebar-footer {
+    flex-direction: column;
+    padding: 10px 0;
+    gap: 8px;
+  }
+
+  /* Строка темы/тура (26+6+26=58px) шире рейла 52px — внутри колонки футера
+     сворачиваем и её: [⛧] / [?] друг под другом. */
+  .sidebar-footer-tools {
+    flex-direction: column;
+  }
+
+  .page {
+    padding: 20px;
+  }
+}
+
+/* L3545–L3547 */
+@media (max-width: 480px) {
+  .modal-box { padding: 24px 20px; }
+}
+
+/* L3684–L3686 */
+@media (max-width: 700px) {
+  .lineage-picker { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* L9258–L9261 */
+@media (max-width: 480px) {
+  .bkp-restore-item { flex-wrap: wrap; }
+  .bkp-restore-item-name { flex: 1 1 100%; }
+}
+
+/* L11537–L11539 */
+@media (max-width: 700px) {
+  .audio-lib-columns { grid-template-columns: 1fr; }
+}
+
+/* L12256–L12294 */
+@media (max-width: 700px) {
+  .v20-combat-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    margin-bottom: 8px;
+  }
+
+  /* Составной селектор (2 класса), не просто .v20-combat-head — head-строка несёт
+     ОБА класса «v20-combat-row v20-combat-head» на одном элементе; отдельное правило
+     .v20-combat-head{display:none} той же специфичности проигрывало бы .v20-combat-row
+     выше по каскаду (более поздний в исходнике побеждает при равной специфичности,
+     то же правило проекта, что и у .cdet-pol-role-sel/tablet-tier — выше по этому же
+     файлу). Составной селектор специфичнее — порядок больше не имеет значения. */
+  .v20-combat-row.v20-combat-head {
+    display: none;
+  }
+
+  .v20-combat-cell {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .v20-combat-cell::before {
+    content: attr(data-label);
+    font-size: var(--fs-2xs);
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  /* width:100% для .v20-line-input здесь больше не дублируется — оно переехало
+     в безусловное правило выше (нужно на обеих ширинах, не только на телефоне). */
+}
+
+/* ── TABLET (7 blocks) ── */
+/* L986–L990 */
+@media (max-width: 820px) {
+  .ais-feat-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* L1567–L1579 */
+@media (max-width: 900px) {
+  /* minmax(0,1fr), не 1fr: auto-минимум трека распирала строка кнопок сцен —
+     на 375px контент вылезал за viewport на ~50px (критика 2026-07-13). */
+  .sess-grid { grid-template-columns: minmax(0, 1fr); }
+
+  /* Одна колонка — sticky-боковая панель поверх основного контента здесь
+     только мешает, возвращаем обычный поток. */
+  .sess-side {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+/* L3141–L3161 */
+@media (max-width: 960px) {
+  .page {
+    padding: 26px 24px;
+  }
+
+  .form-row {
+    flex-wrap: wrap;
+  }
+
+  .form-row .form-group {
+    flex: 1 1 220px;
+  }
+
+  .mod-create-row {
+    flex-wrap: wrap;
+  }
+
+  .filter-bar {
+    gap: 10px;
+  }
+}
+
+/* L4552–L4561 */
+@media (max-width: 1023px) {
+  .cdet-pol-role-sel, .cdet-prim-clan-sel,
+  .cdet-pol-role-custom, .cdet-loc-type-custom, .cdet-prim-clan-custom {
+    flex-basis: 100px;
+  }
+
+  .cdet-pol-name-inp, .cdet-loc-name-inp, .cdet-prim-name-inp {
+    flex-basis: 150px;
+  }
+}
+
+/* L11541–L11543 */
+@media (min-width: 701px) and (max-width: 1023px) {
+  .audio-lib-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* L12167–L12173 */
+@media (max-width: 720px) {
+
+  .v20-header,
+  .v20-grid3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* L14178–L14197 */
+@media (max-width: 820px) {
+
+  #char-detail-content,
+  #loc-detail-content {
+    flex-direction: column;
+  }
+
+  .cdet-portrait-col,
+  .locdet-img-col {
+    width: 100%;
+    min-width: 0;
+    height: 200px;
+    flex-shrink: 0;
+  }
+
+  .cdet-info-col {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* ── SHORT HEIGHT (низкие экраны: ландшафтный планшет 1280×800, ноутбук
+   1366×768, маленькое окно ПК 1280×720) ──
+   Шириной эти экраны попадают в desktop-тир, но высоты 720–800px не хватает:
+   развёрнутый сайдбар (210px) с городским свитчером + 3 группы по 13 пунктов +
+   футер занимает почти весь экран, а у контента остаются верхние отступы
+   заголовков раздела (30px) и орнаментов (28px). Здесь вертикальный ритм
+   уплотняется, чтобы карточка контента помещалась в первый экран, а не уходила
+   под скролл. */
+@media (max-height: 800px) {
+  .page-header {
+    margin-bottom: 16px;
+  }
+
+  .page {
+    padding-bottom: 24px;
+  }
+
+  /* Орнаменты-заголовки внутренних блоков (сеток карточек, форм) */
+  .ornament {
+    margin-bottom: 14px;
+  }
+
+  /* Сжатый вертикальный ритм главных сеток на низком экране */
+  .stats-grid,
+  .chars-grid,
+  .locs-grid,
+  .chp-grid,
+  .lib-cards {
+    margin-top: 4px;
+  }
+}
+
+/* ── DESKTOP (1 blocks) ── */
+/* L2036–L2041 */
+@media (max-width: 1099px) {
+  .chars-belonging-tabs .chron-tab {
+    padding: 10px 11px;
+    letter-spacing: .05em;
+  }
+}
+
+/* ── MOTION (6 blocks) ── */
+/* L1501–L1505 */
+@media (prefers-reduced-motion: reduce) {
+  .page.active, .page.page-out,
+  .page.page-out-fwd, .page.page-out-back,
+  .page.active.page-in-fwd, .page.active.page-in-back { animation: none; }
+}
+
+/* L1895–L1897 */
+@media (prefers-reduced-motion: reduce) {
+  .dice-verdict { animation: none; }
+}
+
+/* L3492–L3499 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* L6086–L6090 */
+@media (prefers-reduced-motion: reduce) {
+  .chd-dir-tension-fill {
+    transition: none;
+  }
+}
+
+/* L6451–L6455 */
+@media (prefers-reduced-motion: no-preference) {
+  .thread-card {
+    transition: background .15s, box-shadow var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
+  }
+}
+
+/* L7186–L7188 */
+@media (prefers-reduced-motion: reduce) {
+  .locdet-field-inp.field-cleared-flash { animation: none; }
+}

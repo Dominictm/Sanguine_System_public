@@ -1,0 +1,696 @@
+/* ══════════════════════════════════════════════════════════════════════
+   base.css — :root-токены, сброс, типографика, фокус, редуцированное движение. Канонический CSS: править здесь, не в styles.css (удалён).
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── @font-face + :root tokens (L1–L153) ── */
+@font-face {
+  font-family: 'Inkulinati';
+  src: url('../fonts/Inkulinati-Regular.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+:root {
+  /* ── Backgrounds ── */
+  --bg: #07050a;
+  --bg2: #0d0a10;
+  --bg3: #120f18;
+  --bg4: #181420;
+  /* ── Borders ── */
+  --border: rgba(139, 0, 0, .22);
+  --border2: rgba(180, 20, 0, .45);
+  /* ── Brand accent ── */
+  --accent: #8B0000;
+  --accent2: #B80000;
+  --accent3: #B80000;
+  --glow: rgba(180, 0, 0, .35);
+  --gold: #B8860B;
+  --gold2: #DAA520;
+  --crimson: #DC143C;
+  /* ── Accent tint levels (blood alpha) ── */
+  --accent-tint-2:  rgba(139, 0, 0, .02);
+  --accent-tint-5:  rgba(139, 0, 0, .05);
+  --accent-tint-8:  rgba(139, 0, 0, .08);
+  --accent-tint-12: rgba(139, 0, 0, .12);
+  --accent-tint-15: rgba(139, 0, 0, .15);
+  --accent-tint-16: rgba(139, 0, 0, .16);
+  --accent-tint-22: rgba(139, 0, 0, .22);
+  --accent-tint-24: rgba(139, 0, 0, .24);
+  --accent-tint-30: rgba(139, 0, 0, .30);
+  --accent-tint-35: rgba(139, 0, 0, .35);
+  --accent-tint-40: rgba(139, 0, 0, .40);
+  --accent-tint-45: rgba(139, 0, 0, .45);
+  /* Промежуточные альфы, затребованные правилами за пределами канонического
+     ряда (полная токенизация 2026-09-07): до этого дыры жили захардкоженными
+     литералами, теперь — токенами, чтобы смена темы покрывала их все. */
+  --accent-tint-3:  rgba(139, 0, 0, .03);
+  --accent-tint-4:  rgba(139, 0, 0, .04);
+  --accent-tint-6:  rgba(139, 0, 0, .06);
+  --accent-tint-7:  rgba(139, 0, 0, .07);
+  --accent-tint-10: rgba(139, 0, 0, .10);
+  --accent-tint-14: rgba(139, 0, 0, .14);
+  --accent-tint-18: rgba(139, 0, 0, .18);
+  --accent-tint-20: rgba(139, 0, 0, .20);
+  --accent-tint-25: rgba(139, 0, 0, .25);
+  --accent-tint-28: rgba(139, 0, 0, .28);
+  --accent-tint-50: rgba(139, 0, 0, .50);
+  --accent-tint-55: rgba(139, 0, 0, .55);
+  --accent-tint-60: rgba(139, 0, 0, .60);
+  --accent-tint-70: rgba(139, 0, 0, .70);
+  --accent-tint-75: rgba(139, 0, 0, .75);
+  /* Повторяющаяся смесь accent 10% на --bg3 (#120f18), захардкожена т.к.
+     цветmix() не поддерживается в браузерах < Chromium 111. Одиночные
+     единичные смеси ниже выражаются прямо в правом месте, а не токеном. */
+  --mix-accent-10-on-bg3: rgb(30, 14, 22);
+  /* Индикаторы состояния (--accent-strong, 2026-09-08): скроллбар, активный
+     борд навигации, активные вкладки, checked-флажки. Церемониальный --accent
+     остаётся тихим в покое (Whisper-Until-Touched); сильный нужен там, где
+     состояние обязано давать WCAG 1.4.11 (3:1). Тёплый = accent2 (кровь ярче),
+     холодный = сталь ~3.1:1 на воиде. */
+  --accent-strong: #C80000;
+  /* Вторая стадия крови (#B80000) — tint-альфы из правил удаления/событий,
+     литералы rgba(184,0,0)/rgba(185,0,0) (полная токенизация 2026-09-08). */
+  --accent2-tint-13: rgba(184, 0, 0, .13);
+  --accent2-tint-24: rgba(184, 0, 0, .24);
+  --accent2-tint-28: rgba(184, 0, 0, .28);
+  --accent2-tint-30: rgba(184, 0, 0, .30);
+  --accent2-tint-50: rgba(184, 0, 0, .50);
+  --accent2-tint-55: rgba(184, 0, 0, .55);
+  /* Gold-tint alphas for the "sheet action" button family (cluster B —
+     see docs/design/2026-07-09-buttons-and-blocks-unification-plan.md);
+     canonicalizes .12/.5/.22 which had drifted to .14/.45/.24 in one class. */
+  --gold-tint-weak: rgba(184, 134, 11, 0.12);
+  --gold-tint-strong: rgba(184, 134, 11, 0.5);
+  --gold-tint-hover: rgba(184, 134, 11, 0.22);
+  /* Промежуточные альфы gold (полная токенизация 2026-09-07): литералы
+     rgba(184,134,11) из правил, не покрытые каноническим weak/strong/hover. */
+  --gold-tint-2:  rgba(184, 134, 11, .02);
+  --gold-tint-4:  rgba(184, 134, 11, .04);
+  --gold-tint-6:  rgba(184, 134, 11, .06);
+  --gold-tint-7:  rgba(184, 134, 11, .07);
+  --gold-tint-8:  rgba(184, 134, 11, .08);
+  --gold-tint-10: rgba(184, 134, 11, .10);
+  --gold-tint-15: rgba(184, 134, 11, .15);
+  --gold-tint-16: rgba(184, 134, 11, .16);
+  --gold-tint-18: rgba(184, 134, 11, .18);
+  --gold-tint-20: rgba(184, 134, 11, .20);
+  --gold-tint-24: rgba(184, 134, 11, .24);
+  --gold-tint-25: rgba(184, 134, 11, .25);
+  --gold-tint-28: rgba(184, 134, 11, .28);
+  --gold-tint-30: rgba(184, 134, 11, .30);
+  --gold-tint-35: rgba(184, 134, 11, .35);
+  --gold-tint-40: rgba(184, 134, 11, .40);
+  --gold-tint-45: rgba(184, 134, 11, .45);
+  /* Вторичное золото (#DAA520) и багровый (#DC143C) — tint-альфы бейджей и
+     линий, литералы rgba(218,165,32)/rgba(220,20,60) (2026-09-08). */
+  --gold2-tint-35: rgba(218, 165, 32, .35);
+  --crimson-tint-10: rgba(220, 20, 60, .10);
+  /* Подсветка строк бокового меню: .05 фон пункта → .10 заголовок группы →
+     .16 пункт под курсором → .24 активный пункт. Заголовок группы держится
+     слабее пункта намеренно — он не ведёт на страницу, и одинаковая с пунктом
+     подсветка обещала бы переход, которого не будет. */
+  --nav-tint-group-hover: rgba(139, 0, 0, .10);
+  --nav-tint-group-active: rgba(139, 0, 0, .14);
+  /* ── Атмосфера фона/сайдбара (полная токенизация 2026-09-07) ── */
+  --page-scrim-a: rgba(7, 5, 10, .82);
+  --page-scrim-b: rgba(7, 5, 10, .30);
+  --page-ambient: rgba(139, 0, 0, .22);
+  --bg-tint-35: rgba(7, 5, 10, .35);
+  --bg-tint-60: rgba(7, 5, 10, .60);
+  --bg-tint-70: rgba(7, 5, 10, .70);
+  --bg-tint-75: rgba(7, 5, 10, .75);
+  --bg-tint-97: rgba(7, 5, 10, .97);
+  --bg-tint-100: rgba(7, 5, 10, 1);
+  --logo-glow: rgba(180, 0, 0, .7);
+  --sidebar-bottom-tint: rgba(80, 0, 0, .08);
+  /* Кроваво-тёмные фоллбеки градиентов до color-mix() (браузеры без
+     color-mix, < Chromium 111): тёплые дуотоны карточек/шапок. Холодная тема
+     переопределяет их сталью (полная токенизация 2026-09-08). */
+  --blood-deep-a: rgb(42, 12, 19);
+  --blood-deep-b: rgb(28, 9, 14);
+  --blood-deep-c: rgb(37, 13, 20);
+  --blood-deep-d: rgb(57, 3, 6);
+  --blood-deep-e: rgb(23, 9, 15);
+  --blood-deep-f: rgba(20, 4, 4, .85);
+  --faction-tint: rgb(74 31 13 / 27%);
+  /* ── Деструктивные элементы (полная токенизация 2026-09-07): отдельная
+     семья, чтобы холодная тема могла приглушить розовый, не трогая steel. ── */
+  --danger-tint-6:  rgba(139, 0, 0, .06);
+  --danger-tint-7:  rgba(139, 0, 0, .07);
+  --danger-tint-10: rgba(139, 0, 0, .10);
+  --danger-tint-12: rgba(139, 0, 0, .12);
+  --danger-tint-14: rgba(139, 0, 0, .14);
+  --danger-tint-15: rgba(139, 0, 0, .15);
+  --danger-tint-18: rgba(139, 0, 0, .18);
+  --danger-tint-20: rgba(139, 0, 0, .20);
+  --danger-tint-22: rgba(139, 0, 0, .22);
+  --danger-tint-40: rgba(139, 0, 0, .40);
+  --danger-tint-50: rgba(139, 0, 0, .50);
+  --danger-tint-55: rgba(139, 0, 0, .55);
+  --danger-tint-70: rgba(139, 0, 0, .70);
+  --danger-tint-75: rgba(139, 0, 0, .75);
+  --danger-soft-10: rgba(180, 40, 40, .10);
+  --danger-soft-22: rgba(180, 40, 40, .22);
+  --danger-strong-70: rgba(180, 60, 60, .70);
+  --danger-strong-80: rgba(180, 60, 60, .80);
+  --danger-text-soft: rgba(220, 100, 100, .85);
+  --danger-text-strong: rgba(220, 100, 100, .90);
+  --danger-border-tint: rgba(204, 34, 0, .35);
+  /* Рамка «опасная зона» — литерал rgba(200,40,0,.4) из кнопок опасности
+     (удаление/восстановление, полная токенизация 2026-09-08). */
+  --danger-border-strong: rgba(200, 40, 0, .40);
+  /* ── Text ── */
+  --text: #E8E0D0;
+  --text2: #a89880;
+  --text3: #8c8279;
+  --text-dim: var(--text2);
+  --text-muted: var(--text3);
+  /* Не тематические — истинный чёрный/белый для дим-оверлеев поверх артов и
+     максимально-контрастного текста/иконок на насыщенном (hover) фоне, где
+     сама идея цвета — «чёрный»/«белый», а не оттенок бренд-палитры. */
+  --pure-black: #000;
+  --pure-white: #fff;
+  /* ── Semantic state colors ── */
+  --c-success: #7dce82;
+  --c-success-dim: #8fd49a;
+  --c-error: #e87070;
+  --c-danger: #cc2200;
+  --c-danger-text: #ff7070;
+  --c-info: #8ab4f8;
+  --c-info-light: #cfe2f5;
+  --gold-muted: #c9a64a;
+  --c-success-dot: #5a9e40;
+  --c-violet: #a78bca;
+  --c-violet-light: #c4a8e0;
+  --c-lore: #8888cc;
+  /* Семантические tint-альфы успеха/инфо/фиолетового/синих ссылок — литералы
+     из бейджей, линий и входов (полная токенизация 2026-09-08). Базовые цвета
+     живут в --c-*; эти альфы нужны, чтобы холодная тема переопределила и их,
+     а не только базу. */
+  --success-tint-6:  rgba(125, 206, 130, .06);
+  --success-tint-7:  rgba(125, 206, 130, .07);
+  --success-tint-10: rgba(125, 206, 130, .10);
+  --success-tint-35: rgba(125, 206, 130, .35);
+  --success-tint-40: rgba(125, 206, 130, .40);
+  --success-tint-75: rgba(125, 206, 130, .75);
+  --info-tint-8:  rgba(138, 180, 248, .08);
+  --info-tint-10: rgba(138, 180, 248, .10);
+  --info-tint-22: rgba(138, 180, 248, .22);
+  --info-tint-35: rgba(138, 180, 248, .35);
+  --info-tint-40: rgba(138, 180, 248, .40);
+  --violet-tint-5:  rgba(167, 139, 202, .05);
+  --violet-tint-12: rgba(167, 139, 202, .12);
+  --violet-tint-30: rgba(167, 139, 202, .30);
+  --violet-tint-35: rgba(167, 139, 202, .35);
+  --violet-tint-45: rgba(167, 139, 202, .45);
+  --violet-tint-50: rgba(167, 139, 202, .50);
+  --link-blue-tint-10: rgba(60, 120, 200, .10);
+  --link-blue-tint-12: rgba(60, 120, 200, .12);
+  --link-blue-tint-18: rgba(60, 120, 200, .18);
+  --link-blue-tint-22: rgba(60, 120, 200, .22);
+  --link-blue-tint-25: rgba(60, 120, 200, .25);
+  --link-blue-tint-30: rgba(60, 120, 200, .30);
+  --link-blue-tint-35: rgba(60, 120, 200, .35);
+  --link-blue-tint-40: rgba(60, 120, 200, .40);
+  --link-blue-deep-22: rgba(30, 80, 160, .22);
+  --link-blue-deep-30: rgba(30, 80, 160, .30);
+  --error-tint-40: rgba(232, 112, 112, .40);
+  --success-dot-tint-50: rgba(90, 158, 64, .50);
+  /* ── Lineage colors ── */
+  --c-fairy: #8dcc6a;
+  --c-werewolf: #c8a060;
+  --c-mage: #7090cc;
+  --c-hunter: #b09050;
+  /* ── Markdown inline links ── */
+  --c-link-char: #e8c84a;
+  --c-link-loc: #7ec8a0;
+  --c-link-loc-hover: #9ee0ba;
+  /* Lineage-бейджи: tint-альфы рамок/фонов из .badge-* (литералы 2026-09-08);
+     холодная тема приглушает их сталью-с-оттенком, сохраняя различимость. */
+  --c-fairy-tint: rgba(141, 204, 106, .3);
+  --c-fairy-bg: rgba(50, 90, 40, .1);
+  --c-werewolf-tint: rgba(200, 160, 96, .35);
+  --c-werewolf-bg: rgba(100, 80, 40, .08);
+  --c-mage-tint: rgba(112, 144, 204, .35);
+  --c-mage-bg: rgba(40, 60, 100, .08);
+  --c-hunter-tint: rgba(176, 144, 80, .35);
+  --c-hunter-bg: rgba(80, 60, 20, .08);
+  /* ── Decorative button gradients (d20/generate — one-off, not core palette) ── */
+  --grad-d20-a: #1e1400;
+  --grad-d20-b: #2e1e00;
+  --grad-d20-hover-a: #2e2000;
+  --grad-d20-hover-b: #3e2c00;
+  --grad-gen-a: #0e1a12;
+  --grad-gen-b: #172513;
+  --grad-gen-hover-b: #1f3019;
+  /* ── Fonts ── */
+  --f-display: 'Cinzel Decorative', 'Cinzel', serif;
+  --f-heading: 'Cinzel', serif;
+  --f-head: 'Cinzel', serif;
+  --f-body: 'Cormorant Garamond', Georgia, serif;
+  --f-mono: 'Share Tech Mono', 'Courier New', monospace;
+  /* Тёмная схема для UA-виджетов (нативные контролы, скроллбары, автозаполнение) —
+     без неё браузер рисует светлые дефолты, слепящие в тёмной комнате. */
+  color-scheme: dark;
+  /* ── Type scale (monotonic: 10→11→12→13→14→15→17→22→25→35→48→64) ──
+     Имена соответствуют фактическим размерам (переименовано 2026-07-13:
+     раньше sm=17 > lg=15 > md=14 — семантика была перевёрнута).
+     --fs-body (25px) = основной текст: Cormorant Garamond читается лучше всего на 25px */
+  --fs-5xs: 9px;
+  --fs-4xs: 8px;
+  --fs-3xs: 10px;
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-nav: 13px;
+  /* боковое меню навигации — отдельный токен, не завязан на шкалу */
+  --fs-icon-sm: 16px;
+  /* значок заголовка группы меню: между --fs-3xs и --fs-lg в шкале ничего
+     подходящего нет, а --fs-md (15px) делает глиф оптически мельче метки */
+  --fs-sm: 14px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 22px;
+  --fs-body: 25px;
+  --fs-display-3: 35px;
+  --fs-display-2: 48px;
+  --fs-display-1: 64px;
+  /* ── Z-index scale ── */
+  --z-card: 2;
+  --z-sticky: 10;
+  --z-modal: 1000;
+  --z-confirm: 1100;
+  --z-sheet: 2000;
+  --z-tour: 2500;
+  --z-lightbox: 9000;
+  --z-tooltip: 9600;
+  --z-toast: 9999;
+  /* ── Misc ── */
+  --sidebar-w: 210px;
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --dur-fast: .18s;
+  --dur-base: .28s;
+  /* ── Radius scale (documented in DESIGN.md, materialized here 2026-07-12) ── */
+  --r-hairline: 1px;
+  --r-sm: 2px;
+  --r-md: 3px;
+  --r-lg: 6px;
+  --r-xl: 10px;
+  /* ── Spacing scale (documented in DESIGN.md, materialized here 2026-07-12) ── */
+  --sp-xs: 4px;
+  --sp-sm: 10px;
+  --sp-md: 16px;
+  --sp-lg: 20px;
+  --sp-xl: 28px;
+  --sp-xxl: 44px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Тема «NYC: зимняя дождливая ночь» (холодная) — включается data-theme
+   на <html> тумблером #btn-theme (scripts.js) / анти-флеш-скриптом в <head>
+   index.html. Тёплый кровавый бренд ↔ холодный стальной: та же структура
+   токенов, другие значения (steel вместо rose/blood/gold-янтарь).
+   ══════════════════════════════════════════════════════════════════════ */
+html[data-theme="nyc-night"] {
+  /* ── Backgrounds: мокрый асфальт ── */
+  --bg: #0a0d11;
+  --bg2: #10141a;
+  --bg3: #161c24;
+  --bg4: #1d242e;
+  /* ── Borders: холодная сталь ── */
+  /* --border2 alpha .40 vs тёплый .45: холодный оттенок визуально ярче
+     при той же альфе (голубой > красный на тёмном фоне), поэтому .40
+     даёт сопоставимый non-text контраст без перевешивания. */
+  --border: rgba(158, 172, 190, .16);
+  --border2: rgba(176, 192, 210, .40);
+  /* ── Brand accent: сталь вместо крови ── */
+  --accent: #41586c;
+  --accent2: #5f7a92;
+  --accent3: #5f7a92;
+  --glow: rgba(84, 122, 156, .38);
+  --gold: #8fa2b6;
+  --gold2: #b3c5d6;
+  --crimson: #7f8b9b;
+  /* ── Accent tint levels (steel alpha) ── */
+  --accent-tint-2:  rgba(65, 88, 108, .02);
+  --accent-tint-3:  rgba(65, 88, 108, .03);
+  --accent-tint-4:  rgba(65, 88, 108, .04);
+  --accent-tint-5:  rgba(65, 88, 108, .05);
+  --accent-tint-6:  rgba(65, 88, 108, .06);
+  --accent-tint-7:  rgba(65, 88, 108, .07);
+  --accent-tint-8:  rgba(65, 88, 108, .08);
+  --accent-tint-10: rgba(65, 88, 108, .10);
+  --accent-tint-12: rgba(65, 88, 108, .12);
+  --accent-tint-14: rgba(65, 88, 108, .14);
+  --accent-tint-15: rgba(65, 88, 108, .15);
+  --accent-tint-16: rgba(65, 88, 108, .16);
+  --accent-tint-18: rgba(65, 88, 108, .18);
+  --accent-tint-20: rgba(65, 88, 108, .20);
+  --accent-tint-22: rgba(65, 88, 108, .22);
+  --accent-tint-24: rgba(65, 88, 108, .24);
+  --accent-tint-25: rgba(65, 88, 108, .25);
+  --accent-tint-28: rgba(65, 88, 108, .28);
+  --accent-tint-30: rgba(65, 88, 108, .30);
+  --accent-tint-35: rgba(65, 88, 108, .35);
+  --accent-tint-40: rgba(65, 88, 108, .40);
+  --accent-tint-45: rgba(65, 88, 108, .45);
+  --accent-tint-50: rgba(65, 88, 108, .50);
+  --accent-tint-55: rgba(65, 88, 108, .55);
+  --accent-tint-60: rgba(65, 88, 108, .60);
+  --accent-tint-70: rgba(65, 88, 108, .70);
+  --accent-tint-75: rgba(65, 88, 108, .75);
+  --mix-accent-10-on-bg3: rgb(23, 28, 36);
+  /* Индикаторы состояния: сталь ~3.1:1 на воиде (см. --accent-strong в :root) */
+  --accent-strong: #4a657e;
+  /* tint-альфы стали (#5f7a92) для вторичных акцентных литералов */
+  --accent2-tint-13: rgba(95, 122, 146, .13);
+  --accent2-tint-24: rgba(95, 122, 146, .24);
+  --accent2-tint-28: rgba(95, 122, 146, .28);
+  --accent2-tint-30: rgba(95, 122, 146, .30);
+  --accent2-tint-50: rgba(95, 122, 146, .50);
+  --accent2-tint-55: rgba(95, 122, 146, .55);
+  /* ── Gold-tint: холодный металл вместо янтаря ── */
+  --gold-tint-weak: rgba(143, 162, 182, 0.12);
+  --gold-tint-strong: rgba(143, 162, 182, 0.5);
+  --gold-tint-hover: rgba(143, 162, 182, 0.22);
+  --gold-tint-2:  rgba(143, 162, 182, .02);
+  --gold-tint-4:  rgba(143, 162, 182, .04);
+  --gold-tint-6:  rgba(143, 162, 182, .06);
+  --gold-tint-7:  rgba(143, 162, 182, .07);
+  --gold-tint-8:  rgba(143, 162, 182, .08);
+  --gold-tint-10: rgba(143, 162, 182, .10);
+  --gold-tint-15: rgba(143, 162, 182, .15);
+  --gold-tint-16: rgba(143, 162, 182, .16);
+  --gold-tint-18: rgba(143, 162, 182, .18);
+  --gold-tint-20: rgba(143, 162, 182, .20);
+  --gold-tint-24: rgba(143, 162, 182, .24);
+  --gold-tint-25: rgba(143, 162, 182, .25);
+  --gold-tint-28: rgba(143, 162, 182, .28);
+  --gold-tint-30: rgba(143, 162, 182, .30);
+  --gold-tint-35: rgba(143, 162, 182, .35);
+  --gold-tint-40: rgba(143, 162, 182, .40);
+  --gold-tint-45: rgba(143, 162, 182, .45);
+  /* Второе золото/багровый переведены в холод: сталь-осветлённая / серо-синий */
+  --gold2-tint-35: rgba(179, 197, 214, .35);
+  --crimson-tint-10: rgba(127, 139, 155, .10);
+  /* ── Подсветка строк бокового меню: сталь ── */
+  --nav-tint-group-hover: rgba(65, 88, 108, .10);
+  --nav-tint-group-active: rgba(65, 88, 108, .14);
+  /* ── Атмосфера фона/сайдбара: ночной дождь ── */
+  --page-scrim-a: rgba(10, 13, 17, .84);
+  --page-scrim-b: rgba(10, 13, 17, .30);
+  --page-ambient: rgba(129, 155, 178, .10);
+  --bg-tint-35: rgba(10, 13, 17, .35);
+  --bg-tint-60: rgba(10, 13, 17, .60);
+  --bg-tint-70: rgba(10, 13, 17, .70);
+  --bg-tint-75: rgba(10, 13, 17, .75);
+  --bg-tint-97: rgba(10, 13, 17, .97);
+  --bg-tint-100: rgba(10, 13, 17, 1);
+  --logo-glow: rgba(122, 156, 190, .65);
+  --sidebar-bottom-tint: rgba(70, 95, 120, .08);
+  /* Кроваво-тёмные фоллбеки → ночной стальной (браузеры без color-mix) */
+  --blood-deep-a: rgb(18, 25, 35);
+  --blood-deep-b: rgb(12, 18, 27);
+  --blood-deep-c: rgb(20, 28, 40);
+  --blood-deep-d: rgb(25, 32, 46);
+  --blood-deep-e: rgb(15, 21, 31);
+  --blood-deep-f: rgba(10, 14, 20, .85);
+  --faction-tint: rgb(28 40 60 / 27%);
+  /* ── Деструктивные элементы: приглушённая терракота вместо яркого розового ── */
+  --danger-tint-6:  rgba(174, 105, 99, .06);
+  --danger-tint-7:  rgba(174, 105, 99, .07);
+  --danger-tint-10: rgba(174, 105, 99, .10);
+  --danger-tint-12: rgba(174, 105, 99, .12);
+  --danger-tint-14: rgba(174, 105, 99, .14);
+  --danger-tint-15: rgba(174, 105, 99, .15);
+  --danger-tint-18: rgba(174, 105, 99, .18);
+  --danger-tint-20: rgba(174, 105, 99, .20);
+  --danger-tint-22: rgba(174, 105, 99, .22);
+  --danger-tint-40: rgba(174, 105, 99, .40);
+  --danger-tint-50: rgba(174, 105, 99, .50);
+  --danger-tint-55: rgba(174, 105, 99, .55);
+  --danger-tint-70: rgba(174, 105, 99, .70);
+  --danger-tint-75: rgba(174, 105, 99, .75);
+  --danger-soft-10: rgba(174, 105, 99, .10);
+  --danger-soft-22: rgba(174, 105, 99, .22);
+  --danger-strong-70: rgba(168, 95, 89, .70);
+  --danger-strong-80: rgba(168, 95, 89, .80);
+  --danger-text-soft: rgba(214, 125, 117, .85);
+  --danger-text-strong: rgba(230, 140, 132, .90);
+  --danger-border-tint: rgba(174, 105, 99, .35);
+  --danger-border-strong: rgba(174, 105, 99, .40);
+  /* ── Text: прохладный пепел вместо тёплой слоновой кости ── */
+  --text: #dfe6ee;
+  --text2: #96a3b1;
+  --text3: #70808e;
+  /* ── Semantic state colors: приглушённые на ~25% ── */
+  --c-success: #6fbf85;
+  --c-success-dim: #82c99a;
+  --c-error: #c17a76;
+  --c-danger: #a15f59;
+  --c-danger-text: #de857d;
+  --c-info: #7fa0d0;
+  --c-info-light: #bccddf;
+  --c-violet: #9383a8;
+  --c-violet-light: #b3a3c6;
+  --c-lore: #7d88ab;
+  /* Переопределения «протекших» в холод: приглушённые сталь-оттенки, которые
+     сохраняют различимость линеек и ссылок (полная токенизация 2026-09-08) */
+  --gold-muted: #99aabc;
+  --c-success-dot: #5f9a6e;
+  --c-fairy: #6fae86;
+  --c-fairy-tint: rgba(111, 174, 134, .45);
+  --c-fairy-bg: rgba(40, 80, 60, .15);
+  --c-werewolf: #a89c86;
+  --c-werewolf-tint: rgba(168, 156, 134, .45);
+  --c-werewolf-bg: rgba(90, 80, 60, .12);
+  --c-mage: #7d90bd;
+  --c-mage-tint: rgba(125, 144, 189, .45);
+  --c-mage-bg: rgba(50, 64, 92, .12);
+  --c-hunter: #a99e7c;
+  --c-hunter-tint: rgba(169, 158, 124, .45);
+  --c-hunter-bg: rgba(80, 74, 50, .12);
+  --c-link-char: #8fa2b6;
+  --c-link-loc: #6fb0a0;
+  --c-link-loc-hover: #93ccba;
+  --success-tint-6:  rgba(111, 191, 133, .06);
+  --success-tint-7:  rgba(111, 191, 133, .07);
+  --success-tint-10: rgba(111, 191, 133, .10);
+  --success-tint-35: rgba(111, 191, 133, .35);
+  --success-tint-40: rgba(111, 191, 133, .40);
+  --success-tint-75: rgba(111, 191, 133, .75);
+  --info-tint-8:  rgba(127, 160, 208, .08);
+  --info-tint-10: rgba(127, 160, 208, .10);
+  --info-tint-22: rgba(127, 160, 208, .22);
+  --info-tint-35: rgba(127, 160, 208, .35);
+  --info-tint-40: rgba(127, 160, 208, .40);
+  --violet-tint-5:  rgba(147, 131, 168, .05);
+  --violet-tint-12: rgba(147, 131, 168, .12);
+  --violet-tint-30: rgba(147, 131, 168, .30);
+  --violet-tint-35: rgba(147, 131, 168, .35);
+  --violet-tint-45: rgba(147, 131, 168, .45);
+  --violet-tint-50: rgba(147, 131, 168, .50);
+  --link-blue-tint-10: rgba(86, 112, 150, .10);
+  --link-blue-tint-12: rgba(86, 112, 150, .12);
+  --link-blue-tint-18: rgba(86, 112, 150, .18);
+  --link-blue-tint-22: rgba(86, 112, 150, .22);
+  --link-blue-tint-25: rgba(86, 112, 150, .25);
+  --link-blue-tint-30: rgba(86, 112, 150, .30);
+  --link-blue-tint-35: rgba(86, 112, 150, .35);
+  --link-blue-tint-40: rgba(86, 112, 150, .40);
+  --link-blue-deep-22: rgba(60, 86, 124, .22);
+  --link-blue-deep-30: rgba(60, 86, 124, .30);
+  --error-tint-40: rgba(193, 122, 118, .40);
+  --success-dot-tint-50: rgba(95, 154, 110, .50);
+  /* ── Декоративные градиенты: сталь/туман ── */
+  --grad-d20-a: #16202b;
+  --grad-d20-b: #1d2836;
+  --grad-d20-hover-a: #1f2b3a;
+  --grad-d20-hover-b: #263445;
+  --grad-gen-a: #111a22;
+  --grad-gen-b: #18242e;
+  --grad-gen-hover-b: #1e2b38;
+}
+
+/* Дизайн-правило «Якорь» (фиксация 2026-09-08, логотип сменён на растровый
+   2026-09-10 — правило и цель те же, сам символ теперь картинка, а не эмодзи):
+   Логотип (layout.css .logo-drop) остаётся как есть в обеих темах —
+   единственный осознанный точечный акцент тёплого бренда на холодном
+   интерфейсе. НЕ фильтровать (grayscale/hue-rotate и т.п.), НЕ перекрашивать.
+   Логотип = «печатный знак» системы, не часть UI-chrome. */
+
+/* Фоновые иллюстрации разделов не грузятся в холодной теме: ночной город
+   оставляет чистый градиент (layout.css — .page/#page-* разбиты на
+   --page-art, чтобы отключать только картинку, сохранив скримы). */
+html[data-theme="nyc-night"] .page {
+  --page-art: none !important;
+}
+
+/* Плавный fade при смене темы: временный data-theme-transitioning ставится
+   скриптом за 1 кадр до смены атрибута и снимается через 400мс.
+   prefers-reduced-motion:reduce глушит transition-duration до .001ms
+   глобальным блоком ниже — fade не нарушает a11y. */
+html[data-theme-transitioning] {
+  transition: background-color .4s ease, color .4s ease, border-color .4s ease;
+}
+
+/* Анти-флеш перевода: пока i18n.js не применил EN-словарь, приложение скрыто
+   (html[data-i18n-loading] ставится в <head> для не-русского языка и снимается
+   после applyI18n). Для ru (источник) атрибута нет — рендер сразу. */
+html[data-i18n-loading] #app {
+  visibility: hidden;
+}
+
+/* ── reset, body, scrollbar (L154–L188) ── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--f-body);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-xl);
+  line-height: 1.6;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent-strong);
+  border-radius: var(--r-md);
+}
+
+
+/* ── keyboard focus (L3473–L3488) ── */
+/* ── Keyboard focus ── */
+/* Visible focus ring for keyboard users (clickable nav <a> and icon buttons
+   that otherwise only signalled focus via border-color). */
+.nav-item:focus-visible,
+.btn-icon:focus-visible,
+.tab-btn:focus-visible,
+.chron-tab:focus-visible,
+.modp-tab:focus-visible,
+.cdet-tab:focus-visible,
+.chr-detail-tab:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--gold2);
+  outline-offset: 2px;
+}
+
+
+/* ── reduced-motion global (L3489–L3500) ── */
+/* ── Reduced motion ── */
+/* Respect the OS "reduce motion" preference: drop the looping blood pulse,
+   the slow art dimming and all incidental transitions to near-instant. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+
+/* ── keyframes (page transitions) (L1444–L1527) ── */
+/* ── Motion pass (фаза A, план 2026-07-15) ──────────────────────────────
+   Движение передаёт состояние (переход/раскрытие/появление), 150–280мс,
+   только transform/opacity. Reduced-motion гасится глобальным блоком выше. */
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes page-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-6px); }
+}
+
+.page.active {
+  animation: page-in var(--dur-fast) var(--ease);
+}
+
+/* Уходящий раздел навигации остаётся на экране (display:block через .active)
+   до конца своей fade-out — JS (navigate() в scripts.js) слушает animationend
+   на .page-out/.page-out-fwd/.page-out-back и только тогда переключает
+   .active на новый раздел, поэтому переход выглядит как последовательный
+   кроссфейд, а не мгновенное исчезание. */
+.page.page-out {
+  animation: page-out var(--dur-fast) var(--ease) forwards;
+}
+
+/* Горизонтальный слайд между пунктами верхнего меню (см. navigate() в
+   scripts.js) — направление берётся из порядка пунктов меню, поэтому переход
+   к соседнему разделу ощущается иначе, чем плоское затемнение выше:
+   «вперёд» уходит влево и въезжает справа, «назад» — зеркально. Селекторы
+   с тремя классами специфичнее .page.active — переопределяют её page-in. */
+@keyframes page-out-fwd {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-18px); }
+}
+
+@keyframes page-in-fwd {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes page-out-back {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(18px); }
+}
+
+@keyframes page-in-back {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.page.page-out-fwd  { animation: page-out-fwd var(--dur-fast) var(--ease) forwards; }
+.page.page-out-back { animation: page-out-back var(--dur-fast) var(--ease) forwards; }
+.page.active.page-in-fwd  { animation: page-in-fwd var(--dur-fast) var(--ease); }
+.page.active.page-in-back { animation: page-in-back var(--dur-fast) var(--ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .page.active, .page.page-out,
+  .page.page-out-fwd, .page.page-out-back,
+  .page.active.page-in-fwd, .page.active.page-in-back { animation: none; }
+}
+
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Аккордеоны и раскрываемые блоки: анимация срабатывает при снятии hidden
+   (display none → block перезапускает animation) и при вставке в DOM. */
+.chron-event-body:not([hidden]),
+.sess-block-body,
+.tl-inline-form-tr .tl-row-form,
+.tl-row-form:not([hidden]),
+.ws-row-form:not([hidden]) {
+  animation: fade-rise var(--dur-fast) var(--ease);
+}
+
+/* Кубики броска: каскад появления (индекс задаёт dice.js через --i) */
+.dice-chip {
+  animation: fade-rise .15s var(--ease) backwards;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
