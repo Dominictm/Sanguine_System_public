@@ -1,0 +1,23 @@
+[
+  "art-genegic",
+  ".vscode",
+  ".impeccable",
+  ".github",
+  ".claude",
+  "docs/superpowers",
+  "docs/design",
+  "docs/audit",
+  "docs/articles",
+  "web/tests",
+  "CLAUDE.md",
+  "DESIGN.md",
+  "web/DESIGN.md",
+  ".agents",
+  "agent",
+  "skills-lock.json",
+  "Правила проекта.md",
+  "docs/gemini.md",
+  "docs/books-inventory.md",
+  "docs/needed-books.md",
+  "docs/library-attribution.md"
+]

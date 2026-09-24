@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<script>
+  /* Анти-флеш: тема и язык читаются из localStorage ДО загрузки CSS/скриптов,
+     чтобы холодная тема не вспыхивала тёплым брендом, а EN не мелькал русским.
+     Развёрнутая логика тумблера — scripts.js (тема, тот же ключ) и
+     scripts/i18n/i18n.js (язык). Для не-русского языка #app скрывается
+     селектором html[data-i18n-loading] #app до применения переводов. */
+  try {
+    if (localStorage.getItem('sanguine-theme') === 'nyc-night') document.documentElement.setAttribute('data-theme', 'nyc-night');
+    var LANG = localStorage.getItem('sanguine-lang');
+    if (LANG === 'en') document.documentElement.setAttribute('data-i18n-loading', '');
+  } catch (e) {}
+</script>
+<title>Sanguine System</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/logo/sanguine-logo-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="img/logo/sanguine-logo-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="img/logo/sanguine-logo-180.png">
+<!-- Никаких внешних ресурсов: приложение — локальный инструмент и обязано полностью
+     работать без интернета. Шрифты (fonts/gf/) и d3 (vendor/) лежат в репозитории;
+     как их обновить — в шапке fonts/google-fonts.css и vendor/README.md. -->
+<link rel="stylesheet" href="fonts/google-fonts.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/pages.css">
+  <link rel="stylesheet" href="css/graph.css">
+  <link rel="stylesheet" href="css/responsive.css">
+<link rel="preload" as="image" href="img/backgrounds/dashboard.png">
+<script src="vendor/d3.v7.min.js" defer></script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Sidebar ── -->
+  <aside id="sidebar">
+    <div class="sidebar-logo">
+      <img class="logo-drop" src="img/logo/sanguine-logo-96.png" alt="" width="28" height="28">
+      <div class="logo-text">
+        <span class="t1">Sanguine</span>
+        <span class="t2">System</span>
+      </div>
+      <div class="sidebar-logo-actions">
+        <button type="button" class="sidebar-collapse-btn" id="btn-sidebar-collapse" data-i18n-title="sidebar.collapse.title" aria-expanded="true">◂</button>
+      </div>
+    </div>
+
+    <div class="city-switch">
+      <div class="city-switch-select-wrap">
+        <select id="city-select" data-i18n-aria="sidebar.city.select"></select>
+        <div class="city-switch-display" aria-hidden="true">
+          <span class="city-switch-name" id="city-switch-name"></span>
+          <span class="city-switch-year" id="city-switch-year"></span>
+        </div>
+      </div>
+      <button type="button" class="city-switch-add" id="btn-city-add" data-i18n-title="sidebar.city.add" data-nav="city-new" data-tab="">+</button>
+    </div>
+
+    <!-- Группы меню разворачиваются кликом по заголовку; значок группы —
+         монохромный текстовый глиф (наследует color, в отличие от цветных
+         эмодзи пунктов), потому что в рейле 52px он остаётся единственным
+         носителем смысла. Состояние — localStorage, см. scripts.js. -->
+    <nav class="nav-menu">
+      <section class="nav-group" data-group="world">
+        <button type="button" class="nav-group-toggle" aria-expanded="true" aria-controls="nav-group-world"
+                data-group-name="Мир" aria-label="Мир" title="Мир" data-i18n-title="nav.world" data-i18n-group-name="nav.world">
+          <span class="nav-group-icon" aria-hidden="true">☾︎</span>
+          <span class="nav-group-label" data-i18n="nav.world">Мир</span>
+          <span class="nav-group-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="nav-group-items" id="nav-group-world" role="group" data-i18n-aria="nav.world">
+          <a class="nav-item active" data-page="dashboard" data-i18n-title="nav.panel">
+            <span class="nav-icon">⚔️</span><span data-i18n="nav.panel">Панель</span>
+          </a>
+          <a class="nav-item" data-page="chronicle" data-i18n-title="nav.timeline">
+            <span class="nav-icon">📜</span><span data-i18n="nav.timeline">Хронология</span>
+          </a>
+          <a class="nav-item" data-page="characters" data-i18n-title="nav.chars">
+            <span class="nav-icon">🎭</span><span data-i18n="nav.chars">Персонажи</span>
+          </a>
+          <a class="nav-item" data-page="graph" data-i18n-title="nav.graph">
+            <span class="nav-icon">🕸</span><span data-i18n="nav.graph">Связи</span>
+          </a>
+          <a class="nav-item" data-page="factions" data-i18n-title="nav.factions">
+            <span class="nav-icon">🗺️</span><span data-i18n="nav.factions">Фракции</span>
+          </a>
+          <a class="nav-item" data-page="locations" data-i18n-title="nav.locations">
+            <span class="nav-icon">📍</span><span data-i18n="nav.locations">Локации</span>
+          </a>
+        </div>
+      </section>
+      <section class="nav-group" data-group="play">
+        <button type="button" class="nav-group-toggle" aria-expanded="true" aria-controls="nav-group-play"
+                data-group-name="Игра" aria-label="Игра" title="Игра" data-i18n-title="nav.play" data-i18n-group-name="nav.play">
+          <span class="nav-group-icon" aria-hidden="true">♟︎</span>
+          <span class="nav-group-label" data-i18n="nav.play">Игра</span>
+          <span class="nav-group-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="nav-group-items" id="nav-group-play" role="group" data-i18n-aria="nav.play">
+          <a class="nav-item" data-page="session" data-i18n-title="nav.session">
+            <span class="nav-icon">🎬</span><span data-i18n="nav.session">Сессия</span>
+          </a>
+          <a class="nav-item" data-page="chronicles-page" data-i18n-title="nav.chroniclesPage">
+            <span class="nav-icon">📕</span><span data-i18n="nav.chroniclesPage">Хроники</span>
+          </a>
+          <a class="nav-item" data-page="modules" data-i18n-title="nav.modules">
+            <span class="nav-icon">📖</span><span data-i18n="nav.modules">Модули</span>
+          </a>
+          <a class="nav-item" data-page="threads" data-i18n-title="nav.threads">
+            <span class="nav-icon">🧵</span><span data-i18n="nav.threads">Нити</span>
+          </a>
+          <a class="nav-item" data-page="rumors" data-i18n-title="nav.rumors">
+            <span class="nav-icon">🎲</span><span data-i18n="nav.rumors">Слухи</span>
+          </a>
+          <a class="nav-item" data-page="audio-library" data-i18n-title="nav.audio">
+            <span class="nav-icon">🎵</span><span data-i18n="nav.audio">Звуки</span>
+          </a>
+        </div>
+      </section>
+      <section class="nav-group" data-group="archive">
+        <button type="button" class="nav-group-toggle" aria-expanded="true" aria-controls="nav-group-archive"
+                data-group-name="Архив" aria-label="Архив" title="Архив" data-i18n-title="nav.archive" data-i18n-group-name="nav.archive">
+          <span class="nav-group-icon" aria-hidden="true">▤</span>
+          <span class="nav-group-label" data-i18n="nav.archive">Архив</span>
+          <span class="nav-group-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="nav-group-items" id="nav-group-archive" role="group" data-i18n-aria="nav.archive">
+          <a class="nav-item" data-page="library" data-i18n-title="nav.library">
+            <span class="nav-icon">📚</span><span data-i18n="nav.library">Библиотека</span>
+          </a>
+          <a class="nav-item" data-page="tools" data-i18n-title="nav.tools">
+            <span class="nav-icon">⚙️</span><span data-i18n="nav.tools">Инструменты</span>
+          </a>
+          <a class="nav-item" data-page="city-new" data-i18n-title="nav.cities">
+            <span class="nav-icon">🏙️</span><span data-i18n="nav.cities">Города</span>
+          </a>
+          <a class="nav-item" data-page="search" data-i18n-title="nav.search">
+            <span class="nav-icon">🔍</span><span data-i18n="nav.search">Поиск</span>
+          </a>
+        </div>
+      </section>
+    </nav>
+
+    <!-- Dark Pack Agreement обязывает разместить логотип «somewhere on Your Material»
+         и нотисы Paradox. Логотип живёт здесь — постоянно на виду, на всех экранах;
+         полный текст нотисов и дисклеймер неофициальности — в модалке «О программе». -->
+    <div class="sidebar-footer">
+      <div class="sidebar-footer-tools">
+        <button type="button" class="btn-theme tour-replay-btn" id="btn-theme" title="Тема оформления: Сгусток крови (T)" aria-label="Переключить тему оформления (T)" aria-pressed="false">
+          <svg class="btn-theme-icon btn-theme-icon-blood" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12,2 6.1,20.1 21.5,8.9 2.5,8.9 17.9,20.1Z"/></svg>
+          <svg class="btn-theme-icon btn-theme-icon-night" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+        <button type="button" class="tour-replay-btn btn-lang" id="btn-lang" title="..." aria-label="...">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5c2.4 2.3 3.8 5.7 3.8 9.5s-1.4 7.2-3.8 9.5c-2.4-2.3-3.8-5.7-3.8-9.5S9.6 4.8 12 2.5z"/></svg>
+        </button>
+        <button type="button" class="tour-replay-btn" id="btn-tour" title="Тур по интерфейсу" aria-label="Запустить тур по интерфейсу">?</button>
+      </div>
+      <button type="button" class="sidebar-about-btn" id="btn-about"
+              data-i18n-title="about.btn.title">
+        <img class="dark-pack-mark" src="img/dark-pack/dark-pack-logo.png" alt="Dark Pack" width="28" height="28">
+      </button>
+      <a class="sidebar-boosty-link" href="https://boosty.to/dominictm/donate" target="_blank" rel="noopener"
+         data-i18n-title="boosty.link.title">
+        <img class="boosty-mark" src="img/boosty/boosty-logo.svg" alt="Boosty" width="28" height="28">
+      </a>
+    </div>
+
+  </aside>
+
+  <!-- ── Main ── -->
+  <div id="main">
+
+    <!-- Dashboard -->
+    <section id="page-dashboard" class="page active">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="dash.title">Панель</h1>
+        <span class="page-sub" data-i18n="dash.sub">Общая информация</span>
+      </div>
+      <div id="dash-content">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="dash.loading">Загрузка данных...</span></div>
+      </div>
+    </section>
+
+    <!-- Chronicle -->
+    <section id="page-chronicle" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="chron.title">Хроника</h1>
+        <span class="page-sub" id="chronicle-sub" data-i18n="chron.sub">События домена</span>
+      </div>
+
+      <div class="chronicle-tabbar">
+        <button class="chron-tab active" data-chron-tab="timeline" data-i18n="chron.tab.sessions">📋 События сессий</button>
+        <button class="chron-tab" data-chron-tab="lore" data-i18n="chron.tab.lore">🕰 Хронология мира</button>
+        <button class="chron-tab" data-chron-tab="world" data-i18n="chron.tab.world">🌍 Состояние мира</button>
+      </div>
+
+      <div id="chronicle-content">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+    </section>
+
+    <!-- Characters -->
+    <section id="page-characters" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="chars.title">Персонажи</h1>
+        <span class="page-sub" id="chars-count-label"></span>
+      </div>
+
+      <div class="chars-belonging-tabs">
+        <button class="chron-tab active" data-belonging-tab="all" aria-pressed="true" data-i18n="chars.belong.all">Все</button>
+        <button class="chron-tab" data-belonging-tab="master" aria-pressed="false"><span class="tab-ico" aria-hidden="true">🎬</span> <span data-i18n="chars.belong.master">Мастера</span></button>
+        <button class="chron-tab" data-belonging-tab="player" aria-pressed="false"><span class="tab-ico" aria-hidden="true">🎲</span> <span data-i18n="chars.belong.player">Игроки</span></button>
+        <button class="chron-tab" data-belonging-tab="episodic" aria-pressed="false"><span class="tab-ico" aria-hidden="true">🎭</span> <span data-i18n="chars.belong.episodic">Эпизодические</span></button>
+        <button class="chron-tab" data-belonging-tab="familiar" aria-pressed="false"><span class="tab-ico" aria-hidden="true">🐾</span> <span data-i18n="chars.belong.familiar">Фамильяры</span></button>
+      </div>
+
+      <div class="filter-bar">
+        <input class="filter-input" id="search-input" data-i18n-placeholder="chars.search.ph">
+        <select class="filter-select" id="filter-lineage">
+          <option value="all" data-i18n="chars.filter.lineage">Все линейки</option>
+          <option value="vampire" data-i18n="chars.lineage.vampire">🧛 Вампиры</option>
+          <option value="fairy" data-i18n="chars.lineage.fairy">🧚 Феи</option>
+          <option value="mortal" data-i18n="chars.lineage.mortal">🧑 Смертные</option>
+          <option value="werewolf" data-i18n="chars.lineage.werewolf">🐺 Оборотни</option>
+          <option value="mage" data-i18n="chars.lineage.mage">🔮 Маги</option>
+          <option value="hunter" data-i18n="chars.lineage.hunter">🏹 Охотники</option>
+        </select>
+        <select class="filter-select" id="filter-status">
+          <option value="all" data-i18n="chars.status.all">Все статусы</option>
+          <option value="active" data-i18n="chars.status.active">Жив / Жива</option>
+          <option value="torpor" data-i18n="chars.status.torpor">Торпор</option>
+          <option value="dead" data-i18n="chars.status.dead">Мёртв / Мертва</option>
+          <option value="missing" data-i18n="chars.status.missing">Пропал</option>
+          <option value="unknown" data-i18n="chars.status.unknown">Неизвестно</option>
+        </select>
+        <!-- impeccable-variants-start c906fd2d -->
+        <div data-impeccable-variants="c906fd2d" data-impeccable-mode="insert" data-impeccable-variant-count="3" style="display: contents">
+          <!-- Variants: insert below this line -->
+        </div>
+        <!-- impeccable-variants-end c906fd2d -->
+        <button class="btn-create-char" id="btn-open-create-char" data-i18n="chars.btn.create">+ Создать</button>
+        <a class="chr-modal-btn" id="btn-export-chars" href="#" style="padding:5px 12px;font-size:var(--fs-lg)" data-i18n="chars.btn.export">⇩ Экспорт</a>
+        <button class="chr-modal-btn cancel" id="btn-export-chars-cancel" style="padding:5px 12px;font-size:var(--fs-lg);display:none" data-i18n="chars.btn.exportCancel">✕ Отмена</button>
+        <a class="chr-modal-btn" id="btn-import-chars-zip" href="#" style="padding:5px 12px;font-size:var(--fs-lg)" data-i18n="chars.btn.importZip">⇧ Импорт ZIP</a>
+        <!-- Foundry export (deprecated, hidden) -->
+        <button class="chr-modal-btn" id="btn-export-foundry-bulk" style="display:none" data-i18n="chars.btn.foundry">🜏 Экспорт в Foundry</button>
+        <button class="chr-modal-btn cancel" id="btn-export-foundry-cancel" style="display:none" data-i18n="chars.btn.foundryCancel">✕ Отмена</button>
+        <input type="file" id="import-chars-zip-file" accept=".zip,.ZIP,application/zip,application/x-zip-compressed" style="display:none">
+        <input type="file" id="import-foundry-file" accept="application/json,.json" style="display:none">
+      </div>
+
+      <div id="chars-grid" class="chars-grid">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+    </section>
+
+    <!-- Graph -->
+    <section id="page-graph" class="page">
+      <div id="graph-toolbar">
+        <div class="graph-toolbar-row">
+          <span class="graph-title" data-i18n="graph.title">🕸 Граф отношений</span>
+          <button class="btn-icon" id="btn-reset" data-i18n-title="graph.reset.title">↺</button>
+          <button class="btn-icon" id="btn-manage-relations" data-i18n-title="graph.relations.title">+</button>
+          <div class="graph-lineage-filter" id="graph-lineage-filter"></div>
+        </div>
+        <div class="graph-toolbar-row">
+          <div class="graph-lineage-filter" id="graph-reltype-filter"></div>
+        </div>
+      </div>
+
+      <div id="graph-wrap">
+        <svg id="graph-svg"></svg>
+        <div id="info-panel">
+          <button class="info-close" id="info-close" data-i18n-aria="ui.btn.close">✕</button>
+          <div id="info-content"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chronicles page -->
+    <section id="page-chronicles-page" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="chronicles.title">Хроники</h1>
+        <span class="page-sub" id="chronicles-page-sub" data-i18n="chronicles.sub">Все хроники</span>
+        <button class="chp-create-btn" id="btn-create-chronicle" data-i18n="chronicles.btn.new">+ Новая хроника</button>
+      </div>
+      <div id="chronicles-cards-list">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+    </section>
+
+    <!-- Chronicle create modal -->
+    <div id="chr-create-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="chr-create-title">
+      <div class="chr-modal">
+        <div class="chr-modal-title" id="chr-create-title" data-i18n="chr.create.title">📕 Новая хроника</div>
+        <div class="chr-modal-body">
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="chr-create-name" data-i18n="chr.f.name">Название *</label>
+            <input class="chr-form-input" id="chr-create-name" data-i18n-placeholder="chr.f.name.ph" autocomplete="off">
+          </div>
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="chr-create-slug">Slug <span class="chr-modal-dim" data-i18n="modcreate.auto">(авто)</span></label>
+            <input class="chr-form-input chr-form-mono" id="chr-create-slug" data-i18n-placeholder="chr.f.slug.ph" autocomplete="off">
+          </div>
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="chr-create-mood"><span data-i18n="chr.f.mood">Настроение</span> <span class="chr-modal-dim" data-i18n="modcreate.opt">(опц.)</span></label>
+            <textarea class="chr-form-input chr-form-textarea" id="chr-create-mood"
+              data-i18n-placeholder="chr.f.mood.ph" rows="3"></textarea>
+          </div>
+          <div id="chr-create-error" class="chr-form-error" style="display:none"></div>
+        </div>
+        <div class="chr-modal-actions">
+          <button id="chr-create-cancel" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="chr-create-submit" class="chr-modal-btn create" data-i18n="ui.btn.create">Создать</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Relations management modal (2026-08-08, Фаза 1 «Связи и отношения») -->
+    <div id="relations-manage-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="relmgr-title">
+      <div class="chr-modal relmgr-modal">
+        <div class="chr-modal-title" id="relmgr-title" data-i18n="relmgr.title">🔗 Управление связями</div>
+        <div class="chr-modal-body relmgr-columns">
+          <div class="relmgr-col">
+            <div class="relmgr-col-title" data-i18n="relmgr.permanent">Постоянные связи</div>
+            <div class="relmgr-hint" data-i18n="relmgr.permanent.hint">Словарь видов связи этого города. Базовый набор защищён от
+              изменений; свои связи можно редактировать и удалять.</div>
+            <input type="text" id="relmgr-permanent-search" class="v20-lib-search" data-i18n-placeholder="relmgr.permanent.ph" autocomplete="off">
+            <div id="relmgr-permanent-list" class="relmgr-list"></div>
+            <div class="relmgr-add-row">
+              <input type="text" id="relmgr-new-name" class="chr-form-input" data-i18n-placeholder="relmgr.new.ph" autocomplete="off">
+              <button type="button" id="relmgr-add-btn" class="chr-modal-btn create" data-i18n="relmgr.btn.add">+ Добавить</button>
+            </div>
+            <div id="relmgr-add-error" class="chr-form-error" style="display:none"></div>
+          </div>
+          <div class="relmgr-col">
+            <div class="relmgr-col-title" data-i18n="relmgr.authored">Авторские связи</div>
+            <div class="relmgr-hint" data-i18n="relmgr.authored.hint">Виды связи этого города, заведённые по ходу хроники: свой
+              «Вид отношений» в карточке попадает сюда автоматически.</div>
+            <input type="text" id="relmgr-authored-search" class="v20-lib-search" data-i18n-placeholder="relmgr.authored.ph" autocomplete="off">
+            <div id="relmgr-authored-list" class="relmgr-list"></div>
+          </div>
+        </div>
+        <div class="chr-modal-actions">
+          <button id="relmgr-close" class="chr-modal-btn cancel" data-i18n="ui.btn.close">Закрыть</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modules -->
+    <section id="page-modules" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="modules.title">Модули</h1>
+        <span class="page-sub" id="modules-sub" data-i18n="modules.sub">Хроника</span>
+        <button class="chp-create-btn" id="btn-create-module-standalone" data-i18n="modules.btn.new">+ Модуль</button>
+      </div>
+      <div id="modules-list">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+    </section>
+
+    <!-- Module Detail Page -->
+    <section id="page-module" class="page">
+      <div class="modp-header">
+        <div class="modp-header-main">
+          <div class="modp-title-row">
+            <button type="button" class="modp-header-collapse-btn tour-replay-btn" id="modp-header-collapse-btn"
+                    aria-expanded="true" data-i18n-title="modp.collapse.title">▴</button>
+            <h1 class="modp-title" id="modp-title"><span data-i18n="ui.loading">Загрузка...</span></h1>
+          </div>
+          <div class="modp-badges" id="modp-badges"></div>
+
+          <div class="modp-header-btns">
+            <button class="modp-back-btn" id="modp-back-btn" data-i18n="modp.back">← Модули</button>
+            <button class="modp-gen-btn" id="modp-gen-btn" aria-live="polite" data-i18n="modp.gen">🪄 Сгенерировать</button>
+            <button class="modp-edit-btn" id="modp-header-edit-btn" data-i18n="modp.hedit">✏ Редактировать</button>
+            <button class="modp-close-btn" id="modp-close-btn" data-i18n="modp.close">🔒 Закрыть модуль</button>
+            <button class="modp-del-btn" id="modp-del-btn" data-i18n="modp.delete">🗑 Удалить модуль</button>
+          </div>
+
+          <div class="modp-header-edit" id="modp-header-edit" style="display:none">
+            <div class="chr-form-group">
+              <label class="chr-form-label" for="modp-hedit-title" data-i18n="modp.edit.title">Название</label>
+              <input class="chr-form-input" id="modp-hedit-title">
+            </div>
+            <div class="mod-create-row">
+              <div class="chr-form-group" style="flex:1">
+                <label class="chr-form-label" for="modp-hedit-type" data-i18n="modp.edit.type">Тип</label>
+                <input class="chr-form-input" id="modp-hedit-type" list="mod-create-type-list" autocomplete="off">
+              </div>
+              <div class="chr-form-group" style="flex:1">
+                <label class="chr-form-label" for="modp-hedit-time" data-i18n="modp.edit.time">Дата / время</label>
+                <input class="chr-form-input" id="modp-hedit-time" autocomplete="off">
+              </div>
+            </div>
+            <div class="mod-create-row">
+              <div class="chr-form-group" style="flex:1">
+                <label class="chr-form-label" for="modp-hedit-tone" data-i18n="modp.edit.tone">Тон</label>
+                <input class="chr-form-input" id="modp-hedit-tone" autocomplete="off">
+              </div>
+              <div class="chr-form-group" style="flex:1">
+                <label class="chr-form-label" for="modp-hedit-format" data-i18n="modp.edit.format">Формат</label>
+                <input class="chr-form-input" id="modp-hedit-format" autocomplete="off">
+              </div>
+            </div>
+            <div class="chr-form-group">
+              <label class="chr-form-label" for="modp-hedit-chronicle" data-i18n="modp.edit.chronicle">Хроника</label>
+              <select class="chr-form-input" id="modp-hedit-chronicle"></select>
+            </div>
+            <div class="mod-create-track-row">
+              <label class="mod-create-track-label">
+                <input type="checkbox" id="modp-hedit-track">
+                <span data-i18n="modp.edit.track">Учитывать события в общей хронике города</span>
+              </label>
+            </div>
+            <div class="modp-edit-bar" style="display:flex">
+              <button class="modp-save-btn" id="modp-hedit-save" data-i18n="ui.btn.save">Сохранить</button>
+              <button class="modp-cancel-btn" id="modp-hedit-cancel" data-i18n="ui.btn.cancel">Отмена</button>
+              <span class="modp-save-msg" id="modp-hedit-msg" style="display:none" data-i18n="modp.edit.saved">✓ Сохранено</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="modp-gen-result" class="modp-gen-result" style="display:none"></div>
+
+      <div class="modp-tabbar" id="modp-tabbar">
+        <button class="modp-tab active" data-modtab="info" data-i18n="modp.tab.info">ℹ Краткое</button>
+        <button class="modp-tab" data-modtab="scenario" data-i18n="modp.tab.scenario">📝 Сценарий</button>
+        <button class="modp-tab" data-modtab="finale" data-i18n="modp.tab.finale">📜 Финал</button>
+        <button class="modp-tab" data-modtab="sessions" data-i18n="modp.tab.sessions">🎲 Сессии</button>
+        <button class="modp-tab" data-modtab="events" data-i18n="modp.tab.events">📅 События</button>
+        <button class="modp-tab" data-modtab="npcs" data-i18n="modp.tab.npcs">👥 НПС</button>
+        <button class="modp-tab" data-modtab="locations" data-i18n="modp.tab.locations">📍 Локации</button>
+        <button class="modp-tab" data-modtab="threads" data-i18n="modp.tab.threads">🧵 Нити</button>
+      </div>
+
+      <div class="modp-body">
+        <div class="modp-panel active" id="modp-panel-info"></div>
+        <div class="modp-panel" id="modp-panel-scenario"></div>
+        <div class="modp-panel" id="modp-panel-finale"></div>
+        <div class="modp-panel" id="modp-panel-sessions"></div>
+        <div class="modp-panel" id="modp-panel-events"></div>
+        <div class="modp-panel" id="modp-panel-npcs"></div>
+        <div class="modp-panel" id="modp-panel-locations"></div>
+        <div class="modp-panel" id="modp-panel-threads"></div>
+      </div>
+    </section>
+
+    <!-- Chronicle detail modal -->
+    <div id="chr-detail-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="chr-detail-title">
+      <div class="chr-modal chr-detail-modal">
+        <div class="chr-detail-header">
+          <div class="chr-detail-titlebar">
+            <div class="chr-modal-title" id="chr-detail-title" data-i18n="chronicles.title">Хроника</div>
+            <button class="chr-detail-close" id="chr-detail-close" data-i18n-aria="ui.btn.close">✕</button>
+          </div>
+          <div class="chr-detail-meta" id="chr-detail-meta"></div>
+          <div class="chr-detail-header-btns">
+            <button class="chp-create-btn" id="btn-create-module-in-chr" style="display:none" data-i18n="modules.btn.new">+ Модуль</button>
+            <button class="chd-dir-btn" id="chd-book" data-i18n-title="chd.book.title">📕 Книга</button>
+            <button class="chd-dir-btn" id="chd-to-timeline" data-i18n-title="chd.totimeline.title">🕰️ В хронологию</button>
+            <button class="chd-dir-btn" id="chd-director-btn" data-i18n-title="chd.director.title">🎭 Директор</button>
+          </div>
+        </div>
+        <div class="chr-detail-tabbar">
+          <button class="chr-detail-tab active" data-chd-tab="modules" data-i18n="chd.tab.modules">📖 Модули</button>
+          <button class="chr-detail-tab" data-chd-tab="events" data-i18n="chd.tab.events">📅 События</button>
+          <button class="chr-detail-tab" data-chd-tab="description" data-i18n="chd.tab.desc">📝 Описание</button>
+          <div class="chd-period-wrap" id="chd-period-wrap" style="display:none">
+            <input class="chd-period-input" id="chd-period-input"
+              list="chd-period-list" data-i18n-placeholder="chd.period.ph" autocomplete="off">
+            <datalist id="chd-period-list"></datalist>
+            <button class="chd-recap-btn" id="chd-recap-btn" data-i18n-title="chd.recap.title" data-i18n="chd.recap">📺 Ранее в хронике…</button>
+          </div>
+        </div>
+        <div id="chd-recap-panel" class="chd-recap-panel" style="display:none"></div>
+        <div id="chd-director-panel" class="chd-director-panel" style="display:none"></div>
+        <div id="chr-detail-body" class="chr-detail-body">
+          <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module create modal -->
+    <div id="mod-create-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="mod-create-title">
+      <div class="chr-modal mod-fill-modal">
+        <div class="chr-modal-title" id="mod-create-title" data-i18n="modcreate.title">📖 Новый модуль</div>
+        <div class="chr-modal-body mod-fill-body">
+
+          <!-- Показывается только при автономном открытии (не из хроники) -->
+          <div class="chr-form-group mod-create-chr-row" id="mod-create-chr-row" style="display:none">
+            <label class="chr-form-label" for="mod-create-chr"><span data-i18n="modcreate.f.chronicle">Хроника</span> <span style="color:var(--c-error)">*</span></label>
+            <select class="chr-form-input" id="mod-create-chr">
+              <option value="" data-i18n="modcreate.chronicle.ph">— выбери хронику —</option>
+            </select>
+          </div>
+
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="mod-create-name" data-i18n="modcreate.f.name">Название *</label>
+            <input class="chr-form-input" id="mod-create-name" data-i18n-placeholder="modcreate.f.name.ph" autocomplete="off">
+          </div>
+
+          <div class="mod-create-row">
+            <div class="chr-form-group" style="flex:1">
+              <label class="chr-form-label" for="mod-create-time"><span data-i18n="modcreate.f.time">Время / дата</span> <span style="color:#e87070">*</span> <span class="chr-modal-dim" data-i18n="modcreate.f.time.suffix">(с годом)</span></label>
+              <input class="chr-form-input" id="mod-create-time" data-i18n-placeholder="modcreate.f.time.ph" autocomplete="off" required>
+            </div>
+            <div class="chr-form-group" style="flex:1">
+              <label class="chr-form-label" for="mod-create-slug">Slug <span class="chr-modal-dim" data-i18n="modcreate.auto">(авто)</span></label>
+              <input class="chr-form-input chr-form-mono" id="mod-create-slug" data-i18n-placeholder="modcreate.f.slug.ph" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="mod-create-row">
+            <div class="chr-form-group" style="flex:1">
+              <label class="chr-form-label" for="mod-create-type" data-i18n="modcreate.f.type">Тип</label>
+              <input class="chr-form-input" id="mod-create-type" list="mod-create-type-list" data-i18n-placeholder="modcreate.f.type.ph" autocomplete="off">
+              <datalist id="mod-create-type-list">
+                <option value="Игровая сессия" data-i18n="modcreate.type.session">
+                <option value="Внесессионное событие" data-i18n="modcreate.type.offsession">
+                <option value="Сольник" data-i18n="modcreate.type.solo">
+              </datalist>
+            </div>
+            <div class="chr-form-group" style="flex:1">
+              <label class="chr-form-label" for="mod-create-tone"><span data-i18n="modcreate.f.tone">Тон</span> <span class="chr-modal-dim" data-i18n="modcreate.tone.optional">(необязательно)</span></label>
+              <input class="chr-form-input" id="mod-create-tone" data-i18n-placeholder="modcreate.f.tone.ph" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="mod-create-format"><span data-i18n="modcreate.f.format">Формат</span> <span class="chr-modal-dim" data-i18n="modcreate.format.optional">(необязательно)</span></label>
+            <input class="chr-form-input" id="mod-create-format" data-i18n-placeholder="modcreate.f.format.ph" autocomplete="off">
+          </div>
+
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="mod-create-pc-input" data-i18n="modcreate.f.pc">Персонажи игроков (ПК)</label>
+            <div class="mod-fill-chips" id="mod-create-pcs"></div>
+            <div class="mod-fill-add-row">
+              <input class="chr-form-input" id="mod-create-pc-input" list="mod-create-pc-list" data-i18n-placeholder="modcreate.chips.ph">
+              <datalist id="mod-create-pc-list"></datalist>
+              <button class="mod-fill-add-btn" id="mod-create-add-pc" data-i18n="relmgr.btn.add">+ Добавить</button>
+            </div>
+          </div>
+
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="mod-create-npc-input" data-i18n="modcreate.f.npc">Персонажи НПС</label>
+            <div class="mod-fill-chips" id="mod-create-npcs"></div>
+            <div class="mod-fill-add-row">
+              <input class="chr-form-input" id="mod-create-npc-input" list="mod-create-npc-list" data-i18n-placeholder="modcreate.chips.ph">
+              <datalist id="mod-create-npc-list"></datalist>
+              <button class="mod-fill-add-btn" id="mod-create-add-npc" data-i18n="relmgr.btn.add">+ Добавить</button>
+            </div>
+          </div>
+
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="mod-create-content"><span data-i18n="modcreate.f.content">Концепция</span> <span class="chr-modal-dim" data-i18n="modcreate.content.hint">(идея, завязка, ключевые сцены)</span></label>
+            <textarea class="chr-form-input chr-form-textarea" id="mod-create-content" rows="5"
+              data-i18n-placeholder="modcreate.f.content.ph"></textarea>
+          </div>
+
+          <div class="mod-create-track-row">
+            <label class="mod-create-track-label">
+              <input type="checkbox" id="mod-create-track" checked>
+              <span data-i18n="modcreate.track">Учитывать события в общей хронике города</span>
+            </label>
+          </div>
+
+          <div id="mod-create-error" class="chr-form-error" style="display:none"></div>
+        </div>
+        <div class="chr-modal-actions">
+          <button id="mod-create-cancel" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="mod-create-submit" class="chr-modal-btn create" data-i18n="ui.btn.save">Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module fill modal (для генерации из существующего модуля) -->
+    <div id="mod-fill-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="mod-fill-title">
+      <div class="chr-modal mod-fill-modal">
+        <div class="chr-modal-title" id="mod-fill-title" data-i18n="modfill.title">🪄 Сгенерировать сценарий</div>
+        <div class="chr-modal-body mod-fill-body">
+
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="mod-fill-pc-input" data-i18n="modcreate.f.pc">Персонажи игроков (ПК)</label>
+            <div class="mod-fill-chips" id="mod-fill-pcs"></div>
+            <div class="mod-fill-add-row">
+              <input class="chr-form-input" id="mod-fill-pc-input" list="mod-fill-pc-list" data-i18n-placeholder="modcreate.chips.ph">
+              <datalist id="mod-fill-pc-list"></datalist>
+              <button class="mod-fill-add-btn" id="mod-fill-add-pc" data-i18n="relmgr.btn.add">+ Добавить</button>
+            </div>
+          </div>
+
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="mod-fill-npc-input" data-i18n="modcreate.f.npc">Персонажи НПС</label>
+            <div class="mod-fill-chips" id="mod-fill-npcs"></div>
+            <div class="mod-fill-add-row">
+              <input class="chr-form-input" id="mod-fill-npc-input" list="mod-fill-npc-list" data-i18n-placeholder="modcreate.chips.ph">
+              <datalist id="mod-fill-npc-list"></datalist>
+              <button class="mod-fill-add-btn" id="mod-fill-add-npc" data-i18n="relmgr.btn.add">+ Добавить</button>
+            </div>
+          </div>
+
+          <div class="chr-form-group">
+            <label class="chr-form-label" for="mod-fill-content"><span data-i18n="modfill.f.content">Содержание модуля</span> <span class="chr-modal-dim" data-i18n="modcreate.content.hint">(идея, завязка, ключевые сцены)</span></label>
+            <textarea class="chr-form-input chr-form-textarea" id="mod-fill-content" rows="6"
+              data-i18n-placeholder="modfill.f.content.ph"></textarea>
+          </div>
+
+          <div id="mod-fill-error" class="chr-form-error" style="display:none"></div>
+        </div>
+        <div class="chr-modal-actions">
+          <button id="mod-fill-cancel" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="mod-fill-generate" class="chr-modal-btn create" data-i18n="modfill.btn.generate">⚡ Сгенерировать сценарий</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module delete confirm modal -->
+    <div id="mod-delete-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="mod-delete-title">
+      <div class="chr-modal">
+        <div class="chr-modal-title" id="mod-delete-title" data-i18n="confirm.delete.module.title">🗑 Удалить модуль</div>
+        <div id="mod-delete-body" class="chr-modal-body"></div>
+        <div class="chr-modal-actions">
+          <button id="mod-delete-cancel" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="mod-delete-confirm" class="chr-modal-btn danger" data-i18n="ui.btn.delete">Удалить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chronicle delete confirm modal -->
+    <div id="chr-delete-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="chr-delete-title">
+      <div class="chr-modal">
+        <div class="chr-modal-title" id="chr-delete-title" data-i18n="confirm.delete.chronicle.title">🗑 Удалить хронику</div>
+        <div id="chr-delete-body" class="chr-modal-body"></div>
+        <div class="chr-modal-actions">
+          <button id="chr-delete-cancel" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="chr-delete-confirm" class="chr-modal-btn danger" disabled data-i18n="ui.btn.delete">Удалить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module delete confirmation (module detail page) -->
+    <div id="modp-delete-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modp-delete-title">
+      <div class="chr-modal" style="max-width:440px">
+        <div class="chr-modal-title" id="modp-delete-title" data-i18n="confirm.delete.modulePage.title">🗑 Удалить модуль?</div>
+        <div id="modp-del-preview" class="chr-modal-body"></div>
+        <div style="margin:8px 16px;font-size:var(--fs-lg);color:var(--text2)">
+          <label>
+            <input type="checkbox" id="modp-del-unlock-check"> <span data-i18n="confirm.iUnderstand">Я понимаю последствия</span>
+          </label>
+        </div>
+        <div class="chr-modal-actions">
+          <button id="modp-del-cancel-btn" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="modp-del-confirm-btn" class="chr-modal-btn danger" disabled data-i18n="ui.btn.delete">Удалить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backup restore confirmation (tab «Бэкап») -->
+    <div id="bkp-restore-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bkp-restore-title">
+      <div class="chr-modal" style="max-width:560px">
+        <div class="chr-modal-title" id="bkp-restore-title" data-i18n="confirm.restore.title">⚠ Восстановить из архива?</div>
+        <div class="chr-modal-body">
+          <div class="chr-modal-warn" data-i18n="confirm.restore.warn">
+            Старые версии заменяемых городов будут перенесены в «Удалённые» — восстановление
+            оттуда ручное, не автоматическое.
+          </div>
+          <div id="bkp-restore-items"></div>
+        </div>
+        <div style="margin:0 0 16px;font-size:var(--fs-lg);color:var(--text2)">
+          <label>
+            <input type="checkbox" id="bkp-restore-unlock-check"> <span data-i18n="confirm.restore.check">Я понимаю, что текущие данные будут заменены</span>
+          </label>
+        </div>
+        <div class="chr-modal-actions">
+          <button id="bkp-restore-cancel-btn" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="bkp-restore-confirm-btn" class="chr-modal-btn danger" disabled data-i18n="ui.btn.restore">Восстановить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Module close confirmation (Фаза C) -->
+    <div id="modp-close-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modp-close-title">
+      <div class="chr-modal" style="max-width:460px">
+        <div class="chr-modal-title" id="modp-close-title" data-i18n="confirm.closeModule.title">🔒 Закрыть модуль?</div>
+        <div class="chr-modal-body">
+          <div class="chr-modal-warn" data-i18n="confirm.closeModule.warn">Будут сгенерированы финал и каноничное событие в хронику. Действие пишет канон и необратимо.</div>
+          <div id="modp-close-nosessions" class="chr-modal-section" style="display:none" data-i18n="confirm.closeModule.nosessions">⚠️ У модуля нет записей сессий — финал/событие будут собраны из сценария.</div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:var(--fs-lg)">
+            <input type="checkbox" id="modp-close-diaries-check">
+            <span data-i18n="confirm.closeModule.diaries">Также сгенерировать дневники участников (по дате модуля)</span>
+          </label>
+        </div>
+        <div class="chr-modal-actions">
+          <button id="modp-close-cancel-btn" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="modp-close-confirm-btn" class="chr-modal-btn danger" data-i18n="confirm.closeModule.confirm">Закрыть модуль</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Finale preview (клик по «📜 Финал» в связанных файлах модуля) -->
+    <div id="finale-preview-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="finale-preview-title">
+      <div class="chr-modal" style="max-width:640px">
+        <div class="chr-modal-title" id="finale-preview-title" data-i18n="finale.title">📜 Финал</div>
+        <div id="finale-preview-body" class="chr-modal-body modp-md"></div>
+        <div class="chr-modal-actions">
+          <button id="finale-preview-to-timeline" class="chr-modal-btn" style="display:none" data-i18n="finale.totimeline">🕰️ В хронологию</button>
+          <button id="finale-preview-close" class="chr-modal-btn cancel" data-i18n="ui.btn.close">Закрыть</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Быстрое добавление итога модуля/хроники в хронологию мира (archive.js) -->
+    <div id="timeline-add-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="timeline-add-title">
+      <div class="chr-modal" style="max-width:640px">
+        <div class="chr-modal-title" id="timeline-add-title" data-i18n="timeline.add.title">🕰️ В хронологию мира</div>
+        <div id="timeline-add-body" class="chr-modal-body"></div>
+        <div class="chr-modal-actions">
+          <button id="timeline-add-save" class="chr-modal-btn" data-i18n="ui.btn.save">Сохранить</button>
+          <button id="timeline-add-close" class="chr-modal-btn cancel" data-i18n="ui.btn.close">Закрыть</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Session screen (session-screen.js) -->
+    <section id="page-session" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="session.title">Сессия</h1>
+        <span class="page-sub" data-i18n="session.sub">Режим живой игры</span>
+      </div>
+      <div class="sess-picker">
+        <select class="form-control" id="sess-chr-sel"><option value="" data-i18n="session.chronicle.ph">— хроника —</option></select>
+        <select class="form-control" id="sess-mod-sel" disabled><option value="" data-i18n="session.module.ph">— модуль —</option></select>
+      </div>
+      <div class="sess-grid">
+        <div class="sess-main">
+          <div id="sess-scenario"><div class="cdet-empty" data-i18n="session.empty">Выбери хронику и модуль</div></div>
+        </div>
+        <aside class="sess-side">
+          <div id="sess-npcs"></div>
+          <div id="sess-audio"></div>
+          <div id="sess-scene-notes-wrap"></div>
+          <div id="sess-notes-wrap"></div>
+        </aside>
+      </div>
+      <div class="sess-scene-nav" id="sess-scene-nav" hidden>
+        <button class="sess-scene-btn" id="sess-prev" data-i18n-title="session.prev.title" data-i18n-aria="session.prev.title">←</button>
+        <span id="sess-scene-label"></span>
+        <button class="sess-scene-btn" id="sess-next" data-i18n-title="session.next.title" data-i18n-aria="session.next.title">→</button>
+      </div>
+    </section>
+
+    <!-- Threads -->
+    <section id="page-threads" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="threads.title">Нити</h1>
+        <span class="page-sub" id="threads-sub" data-i18n="threads.sub">Открытые нити</span>
+        <button class="btn-submit" id="btn-new-thread" style="margin-left:auto" data-i18n="threads.btn.new">+ Новая нить</button>
+      </div>
+      <div id="thread-form" class="thread-form" style="display:none">
+        <div class="form-row">
+          <div class="form-group" style="flex:2"><label class="form-label" for="th-title" data-i18n="threads.f.title">Заголовок *</label><input class="form-control" id="th-title" data-i18n-placeholder="threads.f.title.ph"></div>
+          <div class="form-group"><label class="form-label" for="th-prio" data-i18n="threads.f.prio">Приоритет</label>
+            <select class="form-control" id="th-prio">
+              <option data-i18n="threads.prio.high">Высокий</option>
+              <option selected data-i18n="threads.prio.medium">Средний</option>
+              <option data-i18n="threads.prio.low">Низкий</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="form-label" for="th-status" data-i18n="threads.f.status">Статус</label>
+            <select class="form-control" id="th-status">
+              <option value="active" data-i18n="threads.status.active">🔴 Активна</option>
+              <option value="background" data-i18n="threads.status.background">🟡 Фоновая</option>
+              <option value="closed" data-i18n="threads.status.closed">🟢 Закрыта</option>
+              <option value="abandoned" data-i18n="threads.status.abandoned">⚫ Заброшена</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label class="form-label" for="th-desc" data-i18n="threads.f.desc">Описание</label><textarea class="form-control" id="th-desc" rows="2" data-i18n-placeholder="threads.f.desc.ph"></textarea></div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2"><label class="form-label" for="th-source" data-i18n="threads.f.source">Источник</label><input class="form-control" id="th-source" data-i18n-placeholder="threads.f.source.ph"></div>
+          <div class="form-group"><label class="form-label" for="th-file" data-i18n="threads.f.file">Файл</label><select class="form-control" id="th-file"></select></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-submit" id="btn-save-thread" data-i18n="threads.btn.save">Создать</button>
+          <button class="btn-submit btn-secondary" id="btn-cancel-thread" data-i18n="ui.btn.cancel">Отмена</button>
+          <span id="th-err" class="err" style="display:none"></span>
+        </div>
+      </div>
+      <div id="threads-list">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+    </section>
+
+    <!-- Factions (political_state.md) -->
+    <section id="page-factions" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="factions.title">Фракции</h1>
+        <span class="page-sub" data-i18n="factions.sub">Политический расклад домена</span>
+      </div>
+      <div class="chronicle-tabbar" id="factions-tabbar">
+        <button class="chron-tab active" data-fac-tab="map" data-i18n="factions.tab.map">🗺️ Карта фракций</button>
+        <button class="chron-tab" data-fac-tab="visitors" data-i18n="factions.tab.visitors">🧳 Визитёры</button>
+      </div>
+      <div id="factions-influence-panel"></div>
+      <div id="factions-content">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+    </section>
+
+    <!-- Rumors (rumors_*.md) -->
+    <section id="page-rumors" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="rumors.title">Слухи</h1>
+        <span class="page-sub" data-i18n="rumors.sub">d20 · бросай на сцене</span>
+      </div>
+      <div class="chronicle-tabbar" id="rumors-tabbar" data-rum-type="elysium">
+        <button class="chron-tab active" data-rum-type="elysium" data-i18n="rumors.tab.elysium">🏛️ Элизиум</button>
+        <button class="chron-tab" data-rum-type="dreaming" data-i18n="rumors.tab.dreaming">🌙 Грёзы</button>
+      </div>
+      <div id="rumors-content" data-rum-type="elysium">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+      <div id="rumors-archive"></div>
+    </section>
+
+    <!-- Locations -->
+    <section id="page-locations" class="page">
+      <div class="page-header">
+        <span class="page-sub" id="locations-sub" data-i18n="locations.sub">Локации</span>
+      </div>
+      <div class="filter-bar">
+        <input class="filter-input" id="loc-search" data-i18n-placeholder="locations.search.ph">
+        <select class="filter-select" id="loc-filter-zone">
+          <option value="all" data-i18n="locations.status.all">Все статусы</option>
+          <option value="Элизиум" data-i18n="locations.zone.elysium">🏛️ Элизиум</option>
+          <option value="Приёмная князя" data-i18n="locations.zone.prince">👑 Приёмная князя</option>
+          <option value="Убежище" data-i18n="locations.zone.haven">🛌 Убежище</option>
+          <option value="Шериф" data-i18n="locations.zone.sheriff">⚔️ Шериф</option>
+          <option value="Сенешаль" data-i18n="locations.zone.seneschal">📜 Сенешаль</option>
+        </select>
+        <select class="filter-select" id="loc-filter-district">
+          <option value="all" data-i18n="locations.district.all">Все округа</option>
+        </select>
+        <select class="filter-select" id="loc-filter-masq">
+          <option value="all" data-i18n="locations.masq.all">Маскарад: все</option>
+          <option value="low" data-i18n="locations.masq.low">🟢 Низкий</option>
+          <option value="medium" data-i18n="locations.masq.medium">🟡 Средний</option>
+          <option value="high" data-i18n="locations.masq.high">🔴 Высокий</option>
+        </select>
+      </div>
+      <button class="chr-modal-btn create" id="loc-page-create-btn" style=" margin-bottom: 10px; padding:5px 12px;font-size:var(--fs-lg)" data-i18n="locations.btn.create">+ Создать локацию</button>
+      <a class="chr-modal-btn" id="btn-export-locs" href="#" style="margin-bottom:10px;margin-left:8px;padding:5px 12px;font-size:var(--fs-lg)" data-i18n="locations.btn.export">⇩ Экспорт</a>
+      <a class="chr-modal-btn" id="btn-import-locs" href="#" style="margin-bottom:10px;margin-left:8px;padding:5px 12px;font-size:var(--fs-lg)" data-i18n="locations.btn.import">⇧ Импорт</a>
+      <input type="file" id="import-locs-file" accept="application/json,.json" style="display:none">
+      <div id="locs-grid" class="locs-grid">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+    </section>
+
+    <!-- Library -->
+    <section id="page-library" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="library.title">Библиотека</h1>
+        <span class="page-sub" data-i18n="library.sub">справочники V20</span>
+      </div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="lib-kindred" data-i18n="library.tab.kindred">Сородичи</button>
+        <button class="tab-btn" data-tab="lib-mortal" data-i18n="library.tab.mortal">Смертные</button>
+        <button class="tab-btn" data-tab="lib-disciplines" data-i18n="library.tab.disciplines">Дисциплины</button>
+        <button class="tab-btn" data-tab="lib-psychics" data-i18n="library.tab.psychics">Психические способности</button>
+        <button class="tab-btn" data-tab="lib-merits" data-i18n="library.tab.merits">✦ Достоинства</button>
+        <button class="tab-btn" data-tab="lib-flaws" data-i18n="library.tab.flaws">✦ Недостатки</button>
+        <button class="tab-btn" data-tab="lib-backgrounds" data-i18n="library.tab.backgrounds">Факты биографии</button>
+      </div>
+
+      <!-- Сородичи: кланы/секты (K5, 2026-08-04; перенесено из отдельной страницы
+           в K7-K10, 2026-08-05). Второй уровень вкладок («Кланы»/«Секты») НЕ
+           переиспользует .tab-btn/.tab-panel — эти классы ловит глобальный
+           делегат (scripts.js), который погасил бы активность вкладки «Сородичи»
+           при клике внутрь неё. Визуал — переиспользованный .disciplines-subtab-bar,
+           поведение — отдельный data-kin-group + свой обработчик (scripts.js). -->
+      <div class="tab-panel active" id="tab-lib-kindred">
+        <div class="disciplines-subtab-bar">
+          <button class="disciplines-subtab-btn active" data-kin-group="clans" aria-pressed="true" data-i18n="library.kin.clans">Кланы</button>
+          <button class="disciplines-subtab-btn" data-kin-group="sects" aria-pressed="false" data-i18n="library.kin.sects">Секты</button>
+          <button class="disciplines-subtab-btn" data-kin-group="titles" aria-pressed="false" data-i18n="library.kin.titles">Титулы</button>
+        </div>
+
+        <div class="kindred-subpanel active" id="kin-sub-clans">
+          <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="clans" data-i18n="library.add.clan">+ Добавить клан</button></div>
+          <div class="lib-panel" id="lib-clans-body">
+            <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+          </div>
+        </div>
+
+        <div class="kindred-subpanel" id="kin-sub-sects">
+          <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="sects" data-i18n="library.add.sect">+ Добавить секту</button></div>
+          <div class="lib-panel" id="lib-sects-body">
+            <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+          </div>
+        </div>
+
+        <div class="kindred-subpanel" id="kin-sub-titles">
+          <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="titles" data-i18n="library.add.title">+ Добавить титул</button></div>
+          <div class="lib-panel" id="lib-titles-body">
+            <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Смертные (2026-08-08) — зеркалит структуру «Сородичи» выше, 5 подкатегорий вместо 3,
+           общий контейнер .mortal-subpanel (не .kindred-subpanel — свой data-mort-group делегат,
+           не путается с data-kin-group). -->
+      <div class="tab-panel" id="tab-lib-mortal">
+        <div class="disciplines-subtab-bar">
+          <button class="disciplines-subtab-btn active" data-mort-group="government" aria-pressed="true" data-i18n="library.mort.gov">Правительственные службы</button>
+          <button class="disciplines-subtab-btn" data-mort-group="religious" aria-pressed="false" data-i18n="library.mort.rel">Религиозные организации</button>
+          <button class="disciplines-subtab-btn" data-mort-group="crime" aria-pressed="false" data-i18n="library.mort.crime">Криминал</button>
+          <button class="disciplines-subtab-btn" data-mort-group="civic" aria-pressed="false" data-i18n="library.mort.civic">Гражданские организации</button>
+          <button class="disciplines-subtab-btn" data-mort-group="positions" aria-pressed="false" data-i18n="library.mort.pos">Должности</button>
+        </div>
+
+        <div class="mortal-subpanel active" id="mort-sub-government">
+          <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="mortal-government" data-i18n="library.add.service">+ Добавить службу</button></div>
+          <div class="lib-panel" id="lib-mortal-government-body">
+            <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+          </div>
+        </div>
+        <div class="mortal-subpanel" id="mort-sub-religious">
+          <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="mortal-religious" data-i18n="library.add.organization">+ Добавить организацию</button></div>
+          <div class="lib-panel" id="lib-mortal-religious-body">
+            <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+          </div>
+        </div>
+        <div class="mortal-subpanel" id="mort-sub-crime">
+          <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="mortal-crime" data-i18n="library.add.group">+ Добавить группировку</button></div>
+          <div class="lib-panel" id="lib-mortal-crime-body">
+            <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+          </div>
+        </div>
+        <div class="mortal-subpanel" id="mort-sub-civic">
+          <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="mortal-civic" data-i18n="library.add.organization">+ Добавить организацию</button></div>
+          <div class="lib-panel" id="lib-mortal-civic-body">
+            <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+          </div>
+        </div>
+        <div class="mortal-subpanel" id="mort-sub-positions">
+          <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="mortal-positions" data-i18n="library.add.position">+ Добавить должность</button></div>
+          <div class="lib-panel" id="lib-mortal-positions-body">
+            <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-lib-disciplines">
+        <div class="disciplines-subtab-bar">
+          <button class="disciplines-subtab-btn active" data-disc-group="all" aria-pressed="true" data-i18n="library.disc.all">Дисциплины</button>
+          <button class="disciplines-subtab-btn" data-disc-group="combo" aria-pressed="false" data-i18n="library.disc.combo">Комбо Дисциплины</button>
+          <button class="disciplines-subtab-btn" data-disc-group="koldun" aria-pressed="false" data-i18n="library.disc.koldun">Колдовство</button>
+          <button class="disciplines-subtab-btn" data-disc-group="necromancy" aria-pressed="false" data-i18n="library.disc.necromancy">Некромантия</button>
+          <button class="disciplines-subtab-btn" data-disc-group="thaumaturgy" aria-pressed="false" data-i18n="library.disc.thaumaturgy">Тауматургия</button>
+          <button class="disciplines-subtab-btn" data-disc-group="dark-thaumaturgy" aria-pressed="false" data-i18n="library.disc.darkThaum">Тёмная Тауматургия</button>
+          <button class="disciplines-subtab-btn" data-disc-group="assamite" aria-pressed="false" data-i18n="library.disc.assamite">Чародейство Ассамитов</button>
+          <button class="disciplines-subtab-btn" data-disc-group="setite" aria-pressed="false" data-i18n="library.disc.setite">Чародейство Сеттитов</button>
+        </div>
+        <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="disciplines" data-i18n="library.add.discipline">+ Добавить дисциплину</button></div>
+        <div class="lib-panel" id="lib-disciplines-body">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-lib-psychics">
+        <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="psychics" data-i18n="library.add.psychic">+ Добавить способность</button></div>
+        <div class="lib-panel" id="lib-psychics-body">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-lib-merits">
+        <div class="merits-subtab-bar">
+          <button class="merits-subtab-btn active" data-merit-cat="physical" data-i18n="library.cat.physical">Физические</button>
+          <button class="merits-subtab-btn" data-merit-cat="mental" data-i18n="library.cat.mental">Умственные</button>
+          <button class="merits-subtab-btn" data-merit-cat="social" data-i18n="library.cat.social">Социальные</button>
+          <button class="merits-subtab-btn" data-merit-cat="supernatural" data-i18n="library.cat.supernatural">Сверхъестественные</button>
+        </div>
+        <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="merits" data-i18n="library.add.merit">+ Добавить достоинство</button></div>
+        <div class="lib-panel" id="lib-merits-body">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-lib-flaws">
+        <div class="flaws-subtab-bar">
+          <button class="flaws-subtab-btn active" data-flaw-cat="физические" data-i18n="library.cat.physical">Физические</button>
+          <button class="flaws-subtab-btn" data-flaw-cat="умственные" data-i18n="library.cat.mental">Умственные</button>
+          <button class="flaws-subtab-btn" data-flaw-cat="социальные" data-i18n="library.cat.social">Социальные</button>
+          <button class="flaws-subtab-btn" data-flaw-cat="сверхъестественные" data-i18n="library.cat.supernatural">Сверхъестественные</button>
+        </div>
+        <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="flaws" data-i18n="library.add.flaw">+ Добавить недостаток</button></div>
+        <div class="lib-panel" id="lib-flaws-body">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-lib-backgrounds">
+        <div class="backgrounds-subtab-bar">
+          <button class="backgrounds-subtab-btn active" data-bg-cat="general" data-i18n="library.bg.general">Общие</button>
+          <button class="backgrounds-subtab-btn" data-bg-cat="vampire" data-i18n="library.bg.vampire">Вампиры</button>
+          <button class="backgrounds-subtab-btn" data-bg-cat="ghoul" data-i18n="library.bg.ghoul">Гули и ревенанты</button>
+          <button class="backgrounds-subtab-btn" data-bg-cat="mage" data-i18n="library.bg.mage">Маги</button>
+          <button class="backgrounds-subtab-btn" data-bg-cat="changeling" data-i18n="library.bg.changeling">Подменыши</button>
+        </div>
+        <div class="lib-add-row"><button type="button" class="mod-fill-add-btn" data-lib-add="backgrounds" data-i18n="library.add.background">+ Добавить факт биографии</button></div>
+        <div class="lib-panel" id="lib-backgrounds-body">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Библиотека: создание авторского элемента (фаза I; правка существующих
+         элементов переехала в единую детейл-модалку — см. v20-sheet.js, K1,
+         2026-08-04). Поля рендерятся JS-ом (_libFormFieldsHtml,
+         library-authoring.js) из единого источника _LIB_FIELD_DEFS — тот же
+         рендерер использует и режим правки внутри детейл-модалки, чтобы
+         разметка полей не расходилась в двух местах. -->
+    <div id="lib-edit-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="lib-edit-title">
+      <div class="chr-modal">
+        <div class="chr-modal-title" id="lib-edit-title" data-i18n="libedit.title">Новый элемент</div>
+        <div class="chr-modal-body">
+          <div id="lib-edit-fields"></div>
+          <div id="lib-edit-error" class="chr-form-error" style="display:none"></div>
+        </div>
+        <div class="chr-modal-actions">
+          <button id="lib-edit-cancel" class="chr-modal-btn cancel" data-i18n="ui.btn.cancel">Отмена</button>
+          <button id="lib-edit-submit" class="chr-modal-btn create" data-i18n="libedit.submit">✓ Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audio library (soundboard) -->
+    <section id="page-audio-library" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="audio.title">Звуковая библиотека</h1>
+        <span class="page-sub" data-i18n="audio.sub">саундборд сессии</span>
+        <button class="btn-submit" id="audio-lib-upload-btn" style="margin-left:auto" data-i18n="audio.upload">+ Загрузить звук</button>
+        <button class="btn-submit btn-secondary" id="audio-lib-stop-all-btn" data-i18n="audio.stopAll">⏹ Остановить всё</button>
+      </div>
+      <div class="audio-lib-columns">
+        <div class="audio-lib-column">
+          <h2 class="audio-lib-column-title" data-i18n="audio.music">Фоновая музыка</h2>
+          <div class="audio-lib-col-cards" id="audio-lib-music-cards">
+            <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+          </div>
+        </div>
+        <div class="audio-lib-column">
+          <h2 class="audio-lib-column-title" data-i18n="audio.effects">Эффекты</h2>
+          <div class="audio-lib-col-cards" id="audio-lib-effects-cards">
+            <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+          </div>
+        </div>
+        <div class="audio-lib-column">
+          <h2 class="audio-lib-column-title" data-i18n="audio.presets">Аудио пресеты</h2>
+          <button type="button" class="btn-submit" id="audio-preset-create-btn" style="margin-bottom:12px" data-i18n="audio.preset.create">+ Создать пресет</button>
+          <div class="audio-lib-col-cards" id="audio-lib-presets-cards">
+            <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Город — страничный вид (city.js). Собственная тонкая шапка рендерится
+         в city.js (по образцу #page-module) — без обёртки .page-header, чтобы
+         не дублировать заголовок и не создавать двойной скролл (фаза J,
+         план 2026-07-16). -->
+    <section id="page-city" class="page">
+      <div id="city-detail-content"></div>
+    </section>
+
+    <!-- Города: карточки доменов + создание (city.js) -->
+    <section id="page-city-new" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="city.page.title">Города</h1>
+        <span class="page-sub" data-i18n="city.page.sub">Домены хроники</span>
+      </div>
+
+      <div id="cities-grid" class="cities-grid">
+        <div class="loading-state"><div class="spinner"></div><span data-i18n="ui.loading">Загрузка...</span></div>
+      </div>
+
+      <details class="city-create-spoiler" id="city-create-spoiler">
+        <summary data-i18n="city.create.summary">+ Создать новый домен</summary>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="city-name"><span data-i18n="city.f.name">Город *</span><span class="field-tip" tabindex="0" data-i18n-tip="city.tip.name">ⓘ</span></label>
+            <input class="form-control" id="city-name" data-i18n-placeholder="city.f.name.ph" type="text">
+            <p class="form-hint"><span data-i18n="city.slug.hint">Слаг папки:</span> <code id="city-slug-preview">—</code></p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="city-year"><span data-i18n="city.year">Год *</span><span class="field-tip" tabindex="0" data-i18n-tip="city.tip.year">ⓘ</span></label>
+            <input class="form-control" id="city-year" data-i18n-placeholder="city.year.ph" type="text" maxlength="4">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="city-description"><span data-i18n="city.f.desc">Сеттинг</span><span class="field-tip" tabindex="0" data-i18n-tip="city.tip.desc">ⓘ</span></label>
+          <textarea class="form-control" id="city-description" rows="3" data-i18n-placeholder="city.f.desc.ph"></textarea>
+        </div>
+        <div id="city-factions-editor"></div>
+        <!-- Политический ландшафт / География / Ключевые локации намеренно не в форме
+             создания (T1/T2/T4, designspec 2026-08-04): на старте города материала для
+             них обычно ещё нет. Все три доступны сразу после создания — через просмотр
+             и редактирование города (районы — уже собственным UI карточек района). -->
+        <div class="city-create-section-label"><span data-i18n="city.rules.seclabel">Голос и стиль хроники</span><span class="field-tip" tabindex="0" data-i18n-tip="city.comment.tip">ⓘ</span></div>
+        <div class="form-group">
+          <label class="form-label" for="city-leitmotif"><span data-i18n="city.f.leitmotif">Лейтмотивы и атмосфера</span><span class="field-tip" tabindex="0" data-i18n-tip="city.tip.leitmotif">ⓘ</span></label>
+          <textarea class="form-control" id="city-leitmotif" rows="3" data-i18n-placeholder="city.f.leitmotif.ph"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="city-specifics"><span data-i18n="city.f.specifics">Специфика ответа</span><span class="field-tip" tabindex="0" data-i18n-tip="city.tip.specifics">ⓘ</span></label>
+          <textarea class="form-control" id="city-specifics" rows="3" data-i18n-placeholder="city.f.specifics.ph"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="city-avoid"><span data-i18n="city.f.avoid">Чего избегать</span><span class="field-tip" tabindex="0" data-i18n-tip="city.tip.avoid">ⓘ</span></label>
+          <textarea class="form-control" id="city-avoid" rows="3" data-i18n-placeholder="city.f.avoid.ph"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="city-sources"><span data-i18n="city.f.sources">Источники</span><span class="field-tip" tabindex="0" data-i18n-tip="city.tip.sources">ⓘ</span></label>
+          <textarea class="form-control" id="city-sources" rows="2" data-i18n-placeholder="city.f.sources.ph"></textarea>
+        </div>
+        <!-- Секции «живого города» (§A2). Свёрнуты: заполнять при создании необязательно,
+             но пять из них (Законы домена / Охотничьи угодья / Технологии и Маскарад /
+             Ограничения генерации / Именник) — рабочий вход AI-генерации, и без них
+             свежий город генерируется без ограничений домена. Поля рисует JS из
+             CITY_FIELD_TIPS (city.js), чтобы подсказки не дублировались в разметке. -->
+        <details class="city-create-spoiler city-create-subspoiler" id="city-create-rules">
+          <summary data-i18n="city.rules.summary">Правила и ограничения города (необязательно)</summary>
+          <div id="city-rules-editor"></div>
+        </details>
+        <button class="btn-submit" id="btn-new-city" data-i18n="city.btn.create">Создать домен</button>
+        <pre class="output-area" id="out-new-city"></pre>
+      </details>
+    </section>
+    <!-- Tools -->
+    <section id="page-tools" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="tools.title">Инструменты</h1>
+        <span class="page-sub" data-i18n="tools.sub">запуск скриптов</span>
+        <div class="ph-restart-section">
+          <button class="ais-restart-btn" id="ais-restart-btn" data-i18n="tools.restart">⟳ Перезапустить сервер</button>
+          <div class="ais-status" id="ais-restart-status"></div>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="validate" data-i18n="tools.tab.validate">Учёт данных</button>
+        <button class="tab-btn" data-tab="ai-connect" data-i18n="tools.tab.ai">🔌 Подключение AI</button>
+        <button class="tab-btn" data-tab="ai-features" data-i18n="tools.tab.features">⚡ Назначение генераций</button>
+        <button class="tab-btn" data-tab="gen-rules"><span data-i18n="tools.tab.genRules">🎯 Правила генерации</span> <span id="gen-rules-badge"></span></button>
+        <button class="tab-btn" data-tab="guide" data-i18n="tools.tab.guide">📖 Инструкции</button>
+        <button class="tab-btn" data-tab="backup" data-i18n="tools.tab.backup">💾 Бэкап</button>
+        <button class="tab-btn" data-tab="trash" data-i18n="tools.tab.trash">🗑️ Удалённые</button>
+      </div>
+
+      <!-- Validate / Учёт данных (объединено с «Ещё», П.3-Б 2026-08-07) -->
+      <div class="tab-panel active" id="tab-validate">
+        <p class="validate-hint" data-i18n="tools.validate.hint">
+          Проверяет все внутренние ссылки в .md файлах проекта. Находит битые ссылки и отсутствующие файлы.
+        </p>
+        <div class="btn-row">
+          <button class="btn-submit" id="btn-validate" data-i18n="tools.validate.run">Проверить</button>
+          <button class="btn-submit btn-secondary" id="btn-validate-fix" data-i18n="tools.validate.fix">Исправить автоматически</button>
+        </div>
+        <pre class="output-area" id="out-validate"></pre>
+
+        <p class="form-hint" style="margin-top:18px;margin-bottom:14px" data-i18n="tools.validate.cityHint">Действуют над текущим выбранным городом (слева в шапке).</p>
+
+        <div class="ls-section">
+          <div class="ls-sec-title" data-i18n="tools.crosscity.title">🌍 Кросс-город — присутствие персонажа</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="mig-lineage" data-i18n="tools.crosscity.lineage">Линейка</label>
+              <select class="form-control" id="mig-lineage">
+                <option value="vampires" data-i18n="tools.lineage.vampire">Вампир</option>
+                <option value="fairies" data-i18n="tools.lineage.fairy">Фея</option>
+                <option value="mortals" data-i18n="tools.lineage.mortal">Смертный</option>
+                <option value="werewolves" data-i18n="tools.lineage.werewolf">Оборотень</option>
+                <option value="mages" data-i18n="tools.lineage.mage">Маг</option>
+                <option value="hunters" data-i18n="tools.lineage.hunter">Охотник</option>
+              </select>
+            </div>
+            <div class="form-group"><label class="form-label" for="mig-slug" data-i18n="tools.crosscity.slug">Слаг персонажа *</label><input class="form-control" id="mig-slug" data-i18n-placeholder="tools.crosscity.slug.ph"></div>
+            <div class="form-group"><label class="form-label" for="mig-to" data-i18n="tools.crosscity.to">Город назначения *</label><input class="form-control" id="mig-to" data-i18n-placeholder="tools.crosscity.to.ph"></div>
+          </div>
+          <div class="form-group"><label class="form-label" for="mig-when" data-i18n="tools.crosscity.when">Когда / контекст</label><input class="form-control" id="mig-when" data-i18n-placeholder="tools.crosscity.when.ph"></div>
+          <button class="btn-submit" id="btn-migrate" data-i18n="tools.crosscity.action">Зафиксировать присутствие</button>
+        </div>
+
+        <div class="ls-section">
+          <div class="ls-sec-title" data-i18n="tools.closchr.title">📕 Закрыть хронику</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="close-chr" data-i18n="tools.closchr.slug">Слаг хроники *</label><input class="form-control" id="close-chr" data-i18n-placeholder="tools.closchr.slug.ph"></div>
+            <div class="form-group"><label class="form-label" for="close-note" data-i18n="tools.closchr.note">Финальная заметка</label><input class="form-control" id="close-note" data-i18n-placeholder="tools.closchr.note.ph"></div>
+          </div>
+          <button class="btn-submit" id="btn-close-chr" data-i18n="tools.closchr.action">Закрыть хронику</button>
+        </div>
+
+        <div class="ls-section">
+          <div class="ls-sec-title" data-i18n="tools.reindex.title">🔄 Индекс событий</div>
+          <button class="btn-submit btn-secondary" id="btn-rebuild-idx" data-i18n="tools.reindex.action">Пересобрать индекс города</button>
+        </div>
+
+        <div class="ls-section">
+          <div class="ls-sec-title" data-i18n="tools.registry.title">📇 Реестр персонажей</div>
+          <p class="form-hint"><span data-i18n="tools.registry.hint.a">Добавляет в</span> <code>characters_index.md</code><span data-i18n="tools.registry.hint.b"> папки персонажей, которых там нет, и сообщает о «висячих» записях. Существующие записи не трогает.</span></p>
+          <button class="btn-submit btn-secondary" id="btn-sync-index" data-i18n="tools.registry.action">Синхронизировать реестр</button>
+        </div>
+
+        <pre class="output-area" id="out-more"></pre>
+      </div>
+
+      <!-- AI Models Settings -->
+      <div class="tab-panel" id="tab-ai-connect">
+        <div id="ai-connect-content">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-ai-features">
+        <div id="ai-features-content">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <!-- Правила генерации (gen-rules) -->
+      <div class="tab-panel" id="tab-gen-rules">
+        <div id="gen-rules-content">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <!-- Инструкции (guide.md) -->
+      <div class="tab-panel" id="tab-guide">
+        <div id="guide-content">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <!-- Бэкап -->
+      <div class="tab-panel" id="tab-backup">
+        <div id="backup-content">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+      <!-- Корзины (мягко удалённые) -->
+      <div class="tab-panel" id="tab-trash">
+        <div id="trash-content">
+          <div class="loading-state"><div class="spinner"></div>Загрузка...</div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Search -->
+    <section id="page-search" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="search.title">Поиск</h1>
+        <span class="page-sub" id="search-global-sub"></span>
+      </div>
+      <div class="srch-bar">
+        <input class="srch-input" id="srch-input" data-i18n-placeholder="search.input.ph" autocomplete="off" maxlength="120">
+        <button class="srch-btn" id="srch-btn">🔍</button>
+      </div>
+      <div id="srch-results">
+        <div class="srch-hint" data-i18n="search.hint">Введи запрос — минимум 3 символа</div>
+      </div>
+    </section>
+
+  </div><!-- #main -->
+</div><!-- #app -->
+
+<!-- ── Create Character Modal ── -->
+<div id="char-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Создание персонажа">
+  <div class="modal-box">
+    <button class="modal-close" id="modal-close" data-i18n-aria="ui.btn.close">✕</button>
+
+    <!-- Step 1: выбор линейки -->
+    <div id="modal-s1">
+      <div class="modal-title" data-i18n="charmodal.title">🩸 Новый персонаж</div>
+      <p class="modal-hint" data-i18n="charmodal.hint">Выберите линейку WoD</p>
+      <div class="lineage-picker">
+        <button class="lineage-pick-btn" data-type="vampire">
+          <span class="lp-icon">🧛</span><span data-i18n="lineage.vampire">Вампир</span>
+        </button>
+        <button class="lineage-pick-btn" data-type="mortal">
+          <span class="lp-icon">🧑</span><span data-i18n="lineage.mortal">Смертный</span>
+        </button>
+        <button class="lineage-pick-btn" data-type="fairy">
+          <span class="lp-icon">🧚</span><span data-i18n="lineage.fairy">Фея</span>
+        </button>
+        <button class="lineage-pick-btn" data-type="werewolf">
+          <span class="lp-icon">🐺</span><span data-i18n="lineage.werewolf">Оборотень</span>
+        </button>
+        <button class="lineage-pick-btn" data-type="mage">
+          <span class="lp-icon">🔮</span><span data-i18n="lineage.mage">Маг</span>
+        </button>
+        <button class="lineage-pick-btn" data-type="hunter">
+          <span class="lp-icon">🏹</span><span data-i18n="lineage.hunter">Охотник</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: поля персонажа -->
+    <div id="modal-s2" style="display:none">
+      <div class="modal-step2-header">
+        <button class="modal-back-btn" id="modal-back" data-i18n="charmodal.back">← Назад</button>
+        <div class="modal-title" id="modal-s2-title"></div>
+      </div>
+      <div id="modal-fields"></div>
+
+      <div id="modal-img-section">
+        <div id="modal-img-preview" style="display:none">
+          <img id="modal-img-thumb" src="" alt="preview">
+          <button class="modal-img-clear" id="modal-img-clear" data-i18n-title="charmodal.image.remove.title" data-i18n-aria="charmodal.image.remove.title">✕</button>
+        </div>
+        <button class="btn-img-upload" id="modal-img-btn" data-i18n="charmodal.image">🖼 Добавить изображение</button>
+        <input type="file" id="modal-img-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none">
+      </div>
+
+      <button class="btn-submit" id="modal-submit" data-i18n="charmodal.submit">Создать персонажа</button>
+      <pre class="output-area" id="modal-output" style="display:none"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- ── Char Detail Modal ── -->
+<div id="char-detail-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Карточка персонажа" data-i18n-aria="detail.char.label">
+  <div class="modal-box modal-detail">
+    <button class="modal-close" id="char-detail-close" data-i18n-aria="ui.btn.close">✕</button>
+    <div id="char-detail-content"></div>
+  </div>
+</div>
+
+<!-- ── Location Detail Modal ── -->
+<div id="loc-detail-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Карточка локации" data-i18n-aria="detail.loc.label">
+  <div class="modal-box modal-loc-detail">
+    <button class="modal-close" id="loc-detail-close" data-i18n-aria="ui.btn.close">✕</button>
+    <div id="loc-detail-content"></div>
+  </div>
+</div>
+
+<!-- ── Location Edit/Create Modal ── -->
+<div id="loc-edit-modal" class="chr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="loc-edit-title">
+  <div class="chr-modal loc-edit-modal">
+    <div class="chr-modal-title" id="loc-edit-title" data-i18n="locedit.title">Локация</div>
+    <div class="chr-modal-body loc-edit-body">
+
+      <div class="loc-edit-gen-row">
+        <button class="chr-modal-btn loc-edit-gen-full-btn" id="loc-edit-gen-full-btn" data-i18n-title="locedit.gen.title" data-i18n="locedit.gen.btn">🪄 Сгенерировать карточку</button>
+        <span class="spinner loc-gen-spinner" id="loc-gen-spinner" style="display:none" aria-hidden="true"></span>
+        <span class="loc-edit-gen-hint" id="loc-edit-gen-hint"></span>
+      </div>
+
+      <div class="chr-form-group">
+        <label class="chr-form-label" for="loc-edit-name"><span data-i18n="locedit.f.name">Название</span> <span class="loc-edit-req">*</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.name">ⓘ</span></label>
+        <input class="chr-form-input" id="loc-edit-name" type="text" data-i18n-placeholder="locedit.f.name.ph" autocomplete="off">
+      </div>
+
+      <div class="loc-edit-row2">
+        <div class="chr-form-group">
+          <label class="chr-form-label" for="loc-edit-district"><span data-i18n="locedit.f.district">Район</span> <span class="loc-edit-req">*</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.district">ⓘ</span></label>
+          <input class="chr-form-input" id="loc-edit-district" type="text" data-i18n-placeholder="locedit.f.district.ph" list="loc-district-list" autocomplete="off">
+          <datalist id="loc-district-list"></datalist>
+        </div>
+        <div class="chr-form-group">
+          <label class="chr-form-label" for="loc-edit-neighborhood"><span data-i18n="locedit.f.neighborhood">Дополнение к адресу</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.neighborhood">ⓘ</span></label>
+          <input class="chr-form-input" id="loc-edit-neighborhood" type="text" data-i18n-placeholder="locedit.f.neighborhood.ph" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="chr-form-group">
+        <label class="chr-form-label" for="loc-edit-address"><span data-i18n="locedit.f.address">Адрес</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.address">ⓘ</span></label>
+        <input class="chr-form-input" id="loc-edit-address" type="text" data-i18n-placeholder="locedit.f.address.ph" autocomplete="off">
+      </div>
+
+      <div class="loc-edit-row2">
+        <div class="chr-form-group">
+          <label class="chr-form-label" for="loc-edit-danger"><span data-i18n="locedit.f.danger">Опасность</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.danger">ⓘ</span></label>
+          <select class="chr-form-input" id="loc-edit-danger">
+            <option value="" data-i18n="locedit.danger.none">—</option>
+            <option value="🟢" data-i18n="locedit.danger.low">🟢 Низкая</option>
+            <option value="🟡" data-i18n="locedit.danger.medium">🟡 Средняя</option>
+            <option value="🔴" data-i18n="locedit.danger.high">🔴 Высокая</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="chr-form-group">
+        <label class="chr-form-label" for="loc-edit-control"><span data-i18n="locedit.f.control">Контроль</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.control">ⓘ</span></label>
+        <input class="chr-form-input" id="loc-edit-control" type="text" data-i18n-placeholder="locedit.f.control.ph" list="loc-control-list" autocomplete="off">
+        <datalist id="loc-control-list"></datalist>
+      </div>
+
+      <div class="chr-form-group loc-edit-field-with-gen">
+        <div class="loc-edit-field-header">
+          <label class="chr-form-label" for="loc-edit-atmosphere"><span data-i18n="locedit.f.atmosphere">Атмосфера</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.atmosphere">ⓘ</span></label>
+          <button class="loc-edit-regen-btn" data-field="atmosphere" data-i18n-title="locedit.regen.title">🔄</button>
+        </div>
+        <textarea class="chr-form-textarea" id="loc-edit-atmosphere" rows="3" data-i18n-placeholder="locedit.f.atmosphere.ph"></textarea>
+      </div>
+
+      <!-- «Сенсорная палитра» здесь была раньше (§13.1-13.3 техспеки) — убрана (§C2):
+           тот же функционал (добавление/редактирование/AI-генерация по каналу) уже
+           есть в детальной модалке просмотра локации (вкладка «Сенсорика»), с per-
+           channel сохранением сразу по клику — форма создания/редактирования
+           дублировала его в облегчённом виде без AI-генерации. Заполняется после
+           создания локации, тем же принципом, что уже работает для «Ключевых точек»
+           и VtM-таблицы — см. docs/design/2026-08-02-location-card-modal-plan.md §6. -->
+
+      <div class="chr-form-group loc-edit-field-with-gen">
+        <div class="loc-edit-field-header">
+          <label class="chr-form-label" for="loc-edit-vtm-context"><span data-i18n="locedit.f.vtm">VtM-контекст / Маскарад</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.vtm">ⓘ</span></label>
+          <button class="loc-edit-regen-btn" data-field="vtmText" data-i18n-title="locedit.regen.title">🔄</button>
+        </div>
+        <textarea class="chr-form-textarea" id="loc-edit-vtm-context" rows="3" data-i18n-placeholder="locedit.f.vtm.ph"></textarea>
+      </div>
+
+      <div class="chr-form-group loc-edit-field-with-gen">
+        <div class="loc-edit-field-header">
+          <label class="chr-form-label" for="loc-edit-hooks"><span data-i18n="locedit.f.hooks">Сценарные крючки</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.hooks">ⓘ</span></label>
+          <button class="loc-edit-regen-btn" data-field="hooks" data-i18n-title="locedit.regen.title">🔄</button>
+        </div>
+        <textarea class="chr-form-textarea" id="loc-edit-hooks" rows="3" data-i18n-placeholder="locedit.f.hooks.ph"></textarea>
+      </div>
+
+      <div class="chr-form-group loc-edit-field-with-gen">
+        <div class="loc-edit-field-header">
+          <label class="chr-form-label" for="loc-edit-image-prompt"><span data-i18n="locedit.f.imagePrompt">Промт изображения (EN)</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.imagePrompt">ⓘ</span></label>
+          <button class="loc-edit-regen-btn" data-field="imagePrompt" data-i18n-title="locedit.regen.title">🔄</button>
+        </div>
+        <textarea class="chr-form-textarea" id="loc-edit-image-prompt" rows="3" data-i18n-placeholder="locedit.f.imagePrompt.ph"></textarea>
+      </div>
+
+      <div class="chr-form-group">
+        <label class="chr-form-label" for="loc-edit-context"><span data-i18n="locedit.f.context">Контекст для генерации</span><span class="field-tip" tabindex="0" data-i18n-tip="locedit.tip.context">ⓘ</span></label>
+        <input class="chr-form-input" id="loc-edit-context" type="text" data-i18n-placeholder="locedit.f.context.ph" autocomplete="off">
+      </div>
+
+      <div id="loc-edit-error" class="chr-modal-warn" style="display:none"></div>
+    </div>
+    <div class="chr-modal-actions">
+      <button class="chr-modal-btn cancel" id="loc-edit-cancel" data-i18n="ui.btn.cancel">Отмена</button>
+      <button class="chr-modal-btn loc-edit-delete-btn" id="loc-edit-delete-btn" style="display:none" data-i18n="locedit.btn.delete">🗑 Удалить</button>
+      <button class="chr-modal-btn create" id="loc-edit-save-btn" data-i18n="ui.btn.save">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Module Detail Modal ── -->
+<div id="module-detail-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Карточка модуля" data-i18n-aria="detail.module.label">
+  <div class="modal-box modal-module-detail">
+    <button class="modal-close" id="module-detail-close" data-i18n-aria="ui.btn.close">✕</button>
+    <div id="module-detail-content"></div>
+  </div>
+</div>
+
+<!-- ── City Detail Modal ── -->
+<!-- ── Audio Upload Modal ── -->
+<div id="audio-upload-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Загрузить звук" data-i18n-aria="audioup.label">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="audio-upload-close" data-i18n-aria="ui.btn.close">✕</button>
+    <h1 class="page-title" style="margin-bottom:20px" data-i18n="audioup.title">Загрузить звук</h1>
+    <form id="audio-upload-form">
+      <div class="form-group">
+        <label class="form-label" for="audio-upload-title" data-i18n="audioup.f.title">Название *</label>
+        <input class="form-control" id="audio-upload-title" type="text" required data-i18n-placeholder="audioup.f.title.ph">
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="audioup.f.category">Категория *</label>
+        <div class="audio-category-radios">
+          <label class="audio-category-radio">
+            <input type="radio" name="audio-upload-category" value="music" required> <span data-i18n="audioup.cat.music">Фоновая музыка</span>
+          </label>
+          <label class="audio-category-radio">
+            <input type="radio" name="audio-upload-category" value="effect" required> <span data-i18n="audioup.cat.effect">Аудио эффекты</span>
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="audio-upload-file" data-i18n="audioup.f.file">Аудиофайл (mp3/ogg/wav, до 20МБ) *</label>
+        <input class="form-control" id="audio-upload-file" type="file" accept="audio/mpeg,audio/ogg,audio/wav" required>
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="btn-submit" id="audio-upload-submit" data-i18n="audioup.submit">Загрузить</button>
+        <button type="button" class="btn-submit btn-secondary" id="audio-upload-cancel" data-i18n="ui.btn.cancel">Отмена</button>
+        <span id="audio-upload-err" class="err" style="display:none"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Audio Preset Modal ── -->
+<div id="audio-preset-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Аудио пресет" data-i18n-aria="audiopreset.label">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="audio-preset-close" data-i18n-aria="ui.btn.close">✕</button>
+    <h1 class="page-title" style="margin-bottom:20px" id="audio-preset-modal-title" data-i18n="audiopreset.title.create">Создать пресет</h1>
+    <form id="audio-preset-form">
+      <div class="form-group">
+        <label class="form-label" for="audio-preset-name" data-i18n="audiopreset.f.name">Название *</label>
+        <input class="form-control" id="audio-preset-name" type="text" required data-i18n-placeholder="audiopreset.f.name.ph">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="audio-preset-location" data-i18n="audiopreset.f.location">Локация</label>
+        <select class="form-control" id="audio-preset-location"><option value="" data-i18n="audiopreset.loc.none">— Без локации —</option></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="audiopreset.f.sounds">Звуки *</label>
+        <div id="audio-preset-track-list" class="audio-preset-track-picker"></div>
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="btn-submit" id="audio-preset-submit" data-i18n="ui.btn.save">Сохранить</button>
+        <button type="button" class="btn-submit btn-secondary" id="audio-preset-cancel" data-i18n="ui.btn.cancel">Отмена</button>
+        <span id="audio-preset-err" class="err" style="display:none"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── О программе / правовая информация ──────────────────────────────────────
+     Три обязательных по Dark Pack Agreement элемента: логотип, дословный нотис
+     Paradox (менять формулировку нельзя) и уведомление, что материал не является
+     официальным World of Darkness. Плюс лицензии на собственный код и вендоренные
+     библиотеки. Подробности — NOTICE.md в корне репозитория. -->
+<div id="about-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="О программе" data-i18n-aria="about.label">
+  <div class="modal-box about-box">
+    <button class="modal-close" id="about-close" data-i18n-aria="ui.btn.close">✕</button>
+    <div class="modal-header">
+      <div class="modal-title">🩸 Sanguine System</div>
+      <p class="modal-hint" data-i18n="about.modal.hint">Неофициальный инструмент Рассказчика для World of Darkness</p>
+    </div>
+
+    <div class="about-body">
+      <a class="about-dark-pack" href="https://www.paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement"
+         target="_blank" rel="noopener" title="Dark Pack Agreement">
+        <img src="img/dark-pack/dark-pack-logo.png" alt="Dark Pack" width="96" height="96">
+      </a>
+
+      <p class="about-notice">
+        Portions of the materials are the copyrights and trademarks of Paradox Interactive AB,
+        and are used with permission. All rights reserved. For more information please visit
+        <a href="https://www.worldofdarkness.com" target="_blank" rel="noopener">worldofdarkness.com</a>.
+      </p>
+
+      <p>
+        <strong data-i18n="about.disclaimer.intro">Sanguine System не является официальным материалом World of Darkness.</strong>
+        <span data-i18n="about.disclaimer.body">
+        Это бесплатный фанатский инструмент, созданный по
+        <a href="https://www.paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement"
+           target="_blank" rel="noopener">Dark Pack Agreement</a>, не связанный с Paradox Interactive AB
+        и не одобренный ею. Vampire: The Masquerade, World of Darkness и связанные названия —
+        товарные знаки Paradox Interactive AB.
+        </span>
+      </p>
+
+      <p data-i18n="about.free.body">
+        Приложение и все его функции распространяются бесплатно. Справочные материалы по игровой
+        системе — краткие пересказы механик для удобства за столом; они не заменяют официальные
+        книги правил, которые стоит купить у издателя.
+      </p>
+
+      <h4 class="about-subtitle" data-i18n="about.subtitle">Лицензии</h4>
+      <ul class="about-licenses">
+        <li><span data-i18n="about.codeLicense.a">Код приложения — MIT (см.</span> <code>LICENSE</code><span data-i18n="about.codeLicense.b">)</span></li>
+        <li data-i18n="about.d3">D3.js 7.9.0 — ISC, © Mike Bostock</li>
+        <li data-i18n="about.fonts">Cinzel, Cinzel Decorative, Cormorant Garamond, Share Tech Mono — SIL Open Font License 1.1</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ── Image Lightbox ── -->
+<div id="img-lightbox" class="img-lightbox">
+  <button class="lightbox-close" id="lightbox-close" data-i18n-aria="lightbox.close">✕</button>
+  <button class="lightbox-nav prev" id="lightbox-prev" data-i18n-aria="lightbox.prev">&#8249;</button>
+  <button class="lightbox-nav next" id="lightbox-next" data-i18n-aria="lightbox.next">&#8250;</button>
+  <div class="lightbox-main">
+    <img class="lightbox-img" id="lightbox-img" src="" alt="">
+    <div class="lightbox-counter" id="lightbox-counter"></div>
+  </div>
+  <div class="lightbox-meta" id="lightbox-meta" hidden>
+    <div class="lightbox-caption" id="lightbox-caption"></div>
+    <div class="lightbox-desc" id="lightbox-desc"></div>
+  </div>
+</div>
+
+<!-- ── Дайс-роллер V20 (dice.js) ── -->
+<button id="dice-fab" data-i18n-title="dice.fab.title" data-i18n-aria="dice.fab.title">🎲</button>
+<div id="dice-panel" hidden>
+  <div class="dice-panel-title"><span data-i18n="dice.title">🎲 Бросок V20</span> <button id="dice-close" data-i18n-aria="ui.btn.close">✕</button></div>
+  <div class="dice-sheet-row" id="dice-sheet-row">
+    <select class="form-control" id="dice-char-sel"><option value="" data-i18n="dice.char.ph">— персонаж —</option></select>
+    <select class="form-control" id="dice-attr-sel" disabled><option value="" data-i18n="dice.attr.ph">— атрибут —</option></select>
+    <select class="form-control" id="dice-abil-sel" disabled><option value="" data-i18n="dice.abil.ph">— способность —</option></select>
+    <select class="form-control" id="dice-virtue-sel"><option value="" data-i18n="dice.virtue.ph">— добродетель —</option></select>
+  </div>
+  <div class="dice-inputs">
+    <label><span data-i18n="dice.pool">Пул</span> <input class="form-control" id="dice-pool" type="number" min="1" max="20" value="5"></label>
+    <label><span data-i18n="dice.diff">Сложность</span> <input class="form-control" id="dice-diff" type="number" min="2" max="10" value="6"><span class="v20-auto-badge" id="dice-unskilled-badge" hidden data-i18n="dice.unskilled">+2 — Не владеет</span></label>
+    <button class="chr-modal-btn" id="dice-roll" data-i18n="dice.roll">Бросить</button>
+  </div>
+  <div id="dice-result"></div>
+  <div id="dice-history"></div>
+</div>
+
+<div id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+<!-- i18n: словари и ядро грузятся первыми — t()/applyI18n нужны остальным скриптам -->
+<script src="scripts/i18n/locale-ru.js"></script>
+<script src="scripts/i18n/locale-en.js"></script>
+<script src="scripts/i18n/i18n.js"></script>
+<script src="scripts/rules-v20.js"></script>
+<script src="scripts/utils.js"></script>
+<script src="scripts/graph.js"></script>
+<script src="scripts/relations-manage.js"></script>
+<script src="scripts/locations.js"></script>
+<script src="scripts/v20-sheet.js"></script>
+<script src="scripts/library-authoring.js"></script>
+<script src="scripts/audio-library.js"></script>
+<script src="scripts/dice.js"></script>
+<script src="scripts/session-screen.js"></script>
+<script src="scripts/scripts.js"></script>
+<script src="scripts/char-detail.js"></script>
+<script src="scripts/archive.js"></script>
+<script src="scripts/modules.js"></script>
+<script src="scripts/city.js"></script>
+<script src="scripts/log-session.js"></script>
+<script src="scripts/search.js"></script>
+<script src="scripts/tour.js"></script>
+<script src="scripts/backup.js"></script>
+<script src="scripts/trash.js"></script>
+</body>
+</html>

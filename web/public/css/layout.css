@@ -1,0 +1,835 @@
+/* ══════════════════════════════════════════════════════════════════════
+   layout.css — #app, #sidebar, #main, .page, навигация. Канонический CSS: править здесь.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── #app, sidebar, nav, main, .page (L189–L713) ── */
+/* ── Layout ── */
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ── Sidebar ── */
+#sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  transition: width var(--dur-base) var(--ease), min-width var(--dur-base) var(--ease);
+}
+
+#sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 30% at 50% 0%, var(--accent-tint-12) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 50% at 50% 100%, var(--sidebar-bottom-tint) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.sidebar-logo {
+  padding: 28px 20px 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  transition: padding var(--dur-base) var(--ease), gap var(--dur-base) var(--ease);
+}
+
+.logo-drop {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: pulse-brand 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px var(--logo-glow));
+  /* Дизайн-правило «Якорь» (2026-09-10, было — эмодзи 🩸): растровый логотип
+     остаётся как есть в обеих темах — единственный осознанный точечный акцент
+     тёплого бренда на холодном интерфейсе. Свой цвет уже в самой картинке;
+     glow (--logo-glow) темизирован отдельно и не затрагивает саму картинку.
+     Не фильтровать (grayscale/hue-rotate и т.п.), не перекрашивать. */
+}
+
+/* Название ключевого кадра нейтральное: пульс логотипа есть и в тёплой (кровь),
+   и в холодной (сталь) темах — glow от --logo-glow, цвет от темы. */
+@keyframes pulse-brand {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: .75;
+    transform: scale(.93);
+  }
+}
+
+.logo-text {
+  line-height: 1.15;
+  max-width: 140px;
+  max-height: 40px;
+  opacity: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width var(--dur-base) var(--ease), max-height var(--dur-base) var(--ease),
+    opacity var(--dur-fast) var(--ease);
+}
+
+.logo-text .t1 {
+  display: block;
+  font-family: var(--f-display);
+  font-size: var(--fs-md);
+  color: var(--accent);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+}
+
+.logo-text .t2 {
+  display: block;
+  font-family: var(--f-heading);
+  font-size: var(--fs-md);
+  color: var(--text2);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* ── Группа навигации (Мир / Игра / Архив) ─────────────────────────────────
+   Заголовок — <button>, а не <div>: нужны нативные Enter/Space, фокус и
+   aria-expanded. Выглядеть кнопкой он при этом не должен — это разделитель,
+   который умеет кликаться, поэтому ни фона, ни рамки, только border-top. */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  /* Левое поле 20px, а не 18px как у прежнего ярлыка: вместе с border-left:2px
+     значок группы встаёт ровно на ту же ось (22px), что и значок пункта. */
+  padding: 7px 20px 6px;
+  /* Без этого высоту строки задаёт line-height:normal глифа (21px при 16px
+     кегля) и заголовок вырастает до 34px — с пунктом в 37px он перестаёт
+     читаться как метка. С line-height:1 выходят контрактные ~29px. */
+  line-height: 1;
+  border: none;
+  border-left: 2px solid transparent;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  background: none;
+  cursor: pointer;
+  transition: background .2s var(--ease), border-left-color .2s var(--ease);
+}
+
+.nav-group:first-child .nav-group-toggle {
+  border-top: none;
+  margin-top: 0;
+}
+
+/* Кольцо фокуса уводим внутрь: глобальное правило рисует его снаружи с
+   outline-offset:2px, а кнопка растянута на всю ширину меню, у которого
+   overflow-x:hidden — снаружи кольцо срезалось бы слева, а в рейле и справа. */
+.nav-group-toggle:focus-visible {
+  outline-offset: -2px;
+}
+
+.nav-group-toggle:hover,
+.nav-group-toggle:focus-visible {
+  background: var(--nav-tint-group-hover);
+}
+
+/* Ярлык группы — печать Cinzel, шепчет в покое. Схлопывается по ширине
+   (не по высоте) вместе с панелью — значок при этом доезжает до центра рейла. */
+.nav-group-label {
+  font-family: var(--f-heading);
+  font-size: var(--fs-3xs);
+  /* Явный line-height обязателен: ярлык — блочный флекс-потомок с
+     overflow:hidden (он нужен для горизонтального схлопывания в рейле), и при
+     унаследованном line-height, равном кеглю, бокс выходит 10px на текст в 14px —
+     Cinzel обрезался сверху и снизу по 2px. Горизонтальному схлопыванию
+     это не мешает: там работает max-width, не высота. */
+  line-height: 1.4;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--text3);
+  max-width: 160px;
+  min-width: 0;
+  opacity: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: max-width var(--dur-base) var(--ease), color .2s var(--ease),
+    opacity var(--dur-fast) var(--ease);
+}
+
+.nav-group-toggle:hover .nav-group-label,
+.nav-group-toggle:focus-visible .nav-group-label {
+  color: var(--text2);
+}
+
+.nav-group-icon {
+  /* Стек шрифтов явный: Cinzel этих знаков не содержит, а без него подстановка
+     зависит от системы и глиф уезжает в цветную эмодзи-презентацию. */
+  font-family: 'Segoe UI Symbol', var(--f-heading), sans-serif;
+  font-size: var(--fs-icon-sm);
+  color: var(--text3);
+  /* Тише значков пунктов (17px / .8) — заголовок остаётся меткой, а не
+     ещё одним пунктом назначения. В рейле правило меняется на обратное. */
+  opacity: .62;
+  transition: opacity .2s var(--ease), font-size var(--dur-base) var(--ease);
+}
+
+.nav-group-toggle:hover .nav-group-icon,
+.nav-group-toggle:focus-visible .nav-group-icon {
+  opacity: .8;
+}
+
+/* Тот же знак «▾», что у .rumors-arch-chev и .city-create-spoiler — словарь
+   раскрытия в проекте уже сложился. Поворот, а не подмена символа: content
+   не анимируется, смена ▸→▾ давала бы рывок мимо схлопывания списка. */
+.nav-group-chevron {
+  margin-left: auto;
+  font-size: var(--fs-3xs);
+  line-height: 1;
+  color: var(--text3);
+  opacity: .7;
+  transform: rotate(0deg);
+  transition: transform var(--dur-base) var(--ease), opacity .2s var(--ease),
+    max-width var(--dur-base) var(--ease);
+}
+
+.nav-group-toggle:hover .nav-group-chevron,
+.nav-group-toggle:focus-visible .nav-group-chevron {
+  opacity: 1;
+}
+
+.nav-group-toggle[aria-expanded="false"] .nav-group-chevron {
+  transform: rotate(-90deg);
+}
+
+/* Признак «внутри активная страница» — только у свёрнутой группы: у
+   развёрнутой активный пункт виден сам, и две планки подряд читались бы как
+   два активных элемента. Признак тройной (планка + яркость + суффикс в
+   aria-label из scripts.js): цвет --accent на --bg2 даёт 1.96:1 и единственным
+   признаком быть не может. */
+.nav-group-toggle[aria-expanded="false"].has-active {
+  border-left-color: var(--accent-strong);
+  background: var(--nav-tint-group-active);
+}
+
+.nav-group-toggle[aria-expanded="false"].has-active .nav-group-label {
+  color: var(--text2);
+}
+
+.nav-group-toggle[aria-expanded="false"].has-active .nav-group-icon {
+  opacity: .8;
+}
+
+/* Схлопывание списка. max-height + overflow сами по себе не убирают пункты из
+   обхода Tab — visibility:hidden убирает; её переключение отложено на время
+   анимации, чтобы список не пропадал рывком. 320px — с запасом на самую
+   длинную группу (6 пунктов) вместе с 44px-строками на touch. */
+.nav-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height var(--dur-base) var(--ease), opacity var(--dur-fast) var(--ease),
+    visibility 0s;
+}
+
+.nav-group-toggle[aria-expanded="false"] + .nav-group-items {
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: max-height var(--dur-base) var(--ease), opacity var(--dur-fast) var(--ease),
+    visibility 0s linear var(--dur-base);
+}
+
+.nav-menu {
+  flex: 1;
+  /* #sidebar is overflow:hidden (so its decorative ::before glow never
+     scrolls); with 13 items + city switcher the list can exceed a short
+     viewport (laptops at 1366×768 minus browser chrome, landscape tablets),
+     so the menu itself needs its own scroll instead of clipping silently.
+     overflow-x:hidden must be explicit (not the "visible" default) — per
+     the CSS overflow spec, an overflow-x left at "visible" next to a
+     non-visible overflow-y is silently forced to "auto" by the browser, so
+     whenever this list actually needs the vertical scrollbar (short window),
+     it would also grow an unwanted horizontal one squeezed into the 52px
+     collapsed rail. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  /*padding: 10px 0;*/
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Нехватку высоты забирает скролл выше, а не сами пункты: без этого колонка
+   сперва сжимает детей и только потом прокручивается. Бьёт это ровно по
+   ярлыкам групп — у .nav-item overflow остался visible, поэтому его защищает
+   автоматический min-height (min-content), а у .nav-group-label overflow:hidden
+   (он нужен для схлопывания в свёрнутой панели) этот min-height обнуляет, и
+   flexbox дожимает ярлык до 10px при 26px содержимого. Порог перешагнул
+   .sidebar-footer, забравший у меню ~55px. Секции групп добавили второй
+   уровень колонки — их содержимое подпадает под ту же логику. */
+.nav-menu > *,
+.nav-group > *,
+.nav-group-items > * {
+  flex-shrink: 0;
+}
+
+.nav-item,
+.nav-flyout-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 5px 20px;
+  font-family: var(--f-heading);
+  font-size: var(--fs-nav);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--text2);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  background: linear-gradient(90deg, var(--accent-tint-5), transparent 75%);
+  transition: color .2s var(--ease), background .2s var(--ease), border-left-color .2s var(--ease),
+    padding var(--dur-base) var(--ease), gap var(--dur-base) var(--ease);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Подпись пункта — сжимается в 0 при сворачивании панели вместе с шириной
+   #sidebar (см. #sidebar.collapsed ниже), а не пропадает рывком через
+   display:none, чтобы значок плавно доезжал до центра колонки. */
+.nav-item span:last-child {
+  max-width: 160px;
+  min-width: 0;
+  opacity: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: max-width var(--dur-base) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+/* Строки всплывающей панели рейла (.nav-flyout-item) ведут себя ровно как
+   пункты меню — поэтому они делят с ними правила, а не копируют градиенты
+   ещё одним набором литералов. Отличия (поля, шрифтовая колонка) — ниже,
+   в блоке .nav-flyout. */
+.nav-item:hover,
+.nav-flyout-item:hover,
+.nav-flyout-item:focus-visible {
+  color: var(--text);
+  background: linear-gradient(90deg, var(--accent-tint-16), var(--accent-tint-2) 80%);
+  border-left-color: var(--accent-strong);
+}
+
+.nav-item.active,
+.nav-flyout-item.active {
+  color: var(--text);
+  background: linear-gradient(90deg, var(--accent-tint-24), var(--accent-tint-4) 85%);
+  border-left-color: var(--accent-strong);
+}
+
+/* ── Подвал панели: знак Dark Pack ─────────────────────────────────────────
+   Требование Dark Pack Agreement — логотип на самом материале. Здесь он виден
+   на всех экранах, но приглушён (opacity), чтобы не спорить с навигацией:
+   это юридический знак, а не элемент управления первого плана. Полный текст
+   нотисов открывается по клику — модалка #about-modal. */
+.sidebar-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+/* Перемещённые из шапки переключатели темы и тура — теперь один ряд круглых
+   кнопок (26px) вместе с юридическими марками: [⛧][?][Dark Pack][Boosty]. */
+.sidebar-footer-tools {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Иконки-ссылки: логотип Dark Pack (обязателен по Dark Pack Agreement — открывает
+   модалку «О программе») и рядом Boosty (внешняя ссылка на донат), одного размера. */
+.sidebar-about-btn,
+.sidebar-boosty-link {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: border-color .2s var(--ease), background .2s var(--ease);
+}
+
+.sidebar-about-btn:hover,
+.sidebar-about-btn:focus-visible,
+.sidebar-boosty-link:hover,
+.sidebar-boosty-link:focus-visible {
+  border-color: var(--border2);
+  background: var(--accent-tint-12);
+}
+
+.dark-pack-mark,
+.boosty-mark {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  opacity: .62;
+  transition: opacity .2s var(--ease);
+}
+
+.sidebar-about-btn:hover .dark-pack-mark,
+.sidebar-about-btn:focus-visible .dark-pack-mark,
+.sidebar-boosty-link:hover .boosty-mark,
+.sidebar-boosty-link:focus-visible .boosty-mark {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .sidebar-about-btn,
+  .sidebar-boosty-link { min-width: 44px; min-height: 44px; }
+}
+
+/* Фиксированная колонка значка: эмодзи пунктов дают от 16.14 до 25.69px
+   собственной ширины, и подписи разъезжаются почти на 10px. С общей колонкой
+   значок группы встаёт на ту же ось, что и значки пунктов. */
+.nav-icon,
+.nav-group-icon {
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.nav-icon {
+  font-size: var(--fs-lg);
+  opacity: .8;
+}
+
+/* ── Main content ── */
+#main {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.page {
+  display: none;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 5px 15px 40px;
+  contain: layout style;
+  /* Акцентное свечение из верхнего левого угла (как дальний отблеск свечи/
+     факела) + базовый вертикальный переход фона — тот же приём глубины, что
+     у градиента навигации и overlay-затемнения на карточке персонажа.
+     Радиальная форма и более высокая непрозрачность (в отличие от прежней
+     плоской диагонали на 7%) нужны, чтобы читаться и сквозь плотную сетку
+     карточек/таблиц, а не только на страницах с открытым пустым фоном.
+     --page-bg-layers — тематическая иллюстрация раздела вместе со своим
+     затемняющим градиентом (задаётся целиком на каждой #page-* секции, см.
+     ниже); по умолчанию "none" — ни иллюстрации, ни лишнего затемнения, пока
+     картинка для раздела не добавлена. */
+  --page-bg-layers: none;
+  --page-art: none;
+  background: radial-gradient(ellipse 900px 560px at -4% -8%, var(--page-ambient), transparent 62%),
+    var(--page-bg-layers),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+}
+
+.page.active {
+  display: block;
+}
+
+/* Тематические фоновые иллюстрации разделов — по одному изображению на
+   верхнеуровневый пункт nav-menu (промты и имена файлов —
+   docs/superpowers/specs/2026-07-07-page-backgrounds-prompts.md). Затемняющий
+   градиент — часть той же переменной, чтобы не включаться раньше картинки. */
+#page-dashboard {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/dashboard.png') center / cover no-repeat;
+}
+
+#page-chronicle {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/chronicle.png') center / cover no-repeat;
+}
+
+#page-characters {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/characters.png') center / cover no-repeat;
+}
+
+#page-graph {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/graph.png') center / cover no-repeat;
+}
+
+#page-factions {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/factions.png') center / cover no-repeat;
+}
+
+#page-chronicles-page {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/chronicles-page.png') center / cover no-repeat;
+}
+
+#page-modules {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/modules.png') center / cover no-repeat;
+}
+
+#page-threads {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/threads.png') center / cover no-repeat;
+}
+
+#page-rumors {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/rumors.png') center / cover no-repeat;
+}
+
+#page-locations {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/locations.png') center / cover no-repeat;
+}
+
+#page-library {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/library.png') center / cover no-repeat;
+}
+
+#page-tools {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/tools.png') center / cover no-repeat;
+}
+
+#page-search {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/search.png') center / cover no-repeat;
+}
+
+#page-module {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/module.png') center / cover no-repeat;
+}
+
+#page-session {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/session.png') center / cover no-repeat;
+}
+
+#page-city {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/city.png') center / cover no-repeat;
+}
+
+#page-city-new {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/city-new.png') center / cover no-repeat;
+}
+
+#page-audio-library {
+  --page-bg-layers: linear-gradient(180deg, var(--page-scrim-a), var(--page-scrim-b)), var(--page-art);
+  --page-art: url('../img/backgrounds/audio-library.png') center / cover no-repeat;
+}
+
+#page-graph {
+  padding: 0;
+  overflow: hidden;
+}
+
+#page-graph.active {
+  display: flex;
+  flex-direction: column;
+}
+
+
+/* ── sidebar collapsed, nav-tip (L3219–L3281) ── */
+
+/* Ручное сворачивание сайдбара (кнопка «◂» под туром) — отдельная иконочная
+   панель: только значки пунктов навигации, полное имя проекта заменяется
+   каплей крови, пояснение раздела всплывает при наведении/фокусе через
+   отдельный элемент .nav-tip (см. scripts.js) — НЕ через CSS ::after внутри
+   .nav-item: .nav-menu держит overflow-y:auto для прокрутки длинного списка,
+   а по спецификации CSS overflow-x у элемента с overflow-y:auto не может
+   остаться visible (браузер принудительно превращает его в auto и обрезает
+   всё, что пытается вылезти за узкую 52px колонку) — проверено вживую через
+   CDP, тултип с opacity:1 физически не прорисовывался. .nav-tip — position:
+   fixed относительно viewport, не потомок #sidebar/.nav-menu, поэтому их
+   overflow его не касается. Состояние сворачивания запоминается в
+   localStorage (см. scripts.js). */
+#sidebar.collapsed {
+  width: 52px;
+  min-width: 52px;
+}
+
+/* Подпись логотипа, кнопка тура и подписи пунктов не display:none — у всех
+   троих задана transition на max-width/max-height/opacity в их базовых
+   правилах выше, здесь только целевые значения. display:none обнулил бы их
+   мгновенно, независимо от transition, и анимация не была бы видна. */
+#sidebar.collapsed .logo-text {
+  /* max-height тоже нужно обнулять явно: колонка (flex-direction:column в
+     свёрнутом .sidebar-logo ниже) учитывает высоту этого блока даже когда его
+     ширина сжата в 0 — двухстрочный текст иначе продолжает раздвигать
+     капля/кнопка «развернуть» пустым местом. */
+  max-width: 0;
+  max-height: 0;
+  opacity: 0;
+}
+
+#sidebar.collapsed .nav-item span:last-child {
+  max-width: 0;
+  opacity: 0;
+}
+
+#sidebar.collapsed .tour-replay-btn,
+#sidebar.collapsed .btn-theme {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Капля крови + кнопка «развернуть обратно» — друг под другом по центру,
+   вместо строки «капля / название / тур / свернуть». flex-direction не
+   анимируется браузером в принципе, поэтому эта перестройка шапки — единственный
+   рывок в анимации сворачивания, остальное (ширина, подписи, разделители)
+   едет плавно. */
+#sidebar.collapsed .sidebar-logo {
+  padding: 20px 14px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#sidebar.collapsed .sidebar-logo-actions {
+  margin-left: 0;
+  /* Скрытая кнопка тура остаётся flex-элементом (max-height:0, а не
+     display:none — чтобы гаснуть плавно), но gap:6px иначе всё равно
+     вставляется рядом с ней, оставляя лишний зазор перед единственной
+     видимой кнопкой «развернуть». */
+  gap: 0;
+}
+
+
+/* ── rail 52px, flyout (L3282–L3472) ── */
+/* ── Рейл 52px: только значки групп ────────────────────────────────────────
+   Рейл включается ДВУМЯ независимыми механизмами — этим классом и
+   @media (max-width: 700px) выше, где класса нет. Правила ниже продублированы
+   в медиазапросе, иначе на узком окне поведение просто не включится.
+   Метка и шеврон в 52px не помещаются, список пунктов уходит целиком:
+   пункты группы открываются всплывающей панелью .nav-flyout (см. scripts.js). */
+#sidebar.collapsed .nav-group-label,
+#sidebar.collapsed .nav-group-chevron {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+#sidebar.collapsed .nav-group-chevron {
+  margin-left: 0;
+}
+
+#sidebar.collapsed .nav-group-toggle {
+  justify-content: center;
+  gap: 0;
+  /* 45px — тот же вертикальный ритм, что у .nav-item в рейле (9px + 27px) */
+  padding: 14px 0;
+}
+
+/* Здесь значок — единственный носитель смысла, поэтому правило «тише пунктов»
+   меняется на противоположное: 17px и .85 дают эффективный контраст 4.06:1
+   (при .62 было бы 2.66:1 — ниже порога 3:1 из WCAG 1.4.11). */
+#sidebar.collapsed .nav-group-icon {
+  font-size: var(--fs-lg);
+  opacity: .85;
+}
+
+/* В рейле планка «внутри активная страница» показывается независимо от
+   aria-expanded: пунктов не видно в любом случае, и без неё непонятно, в
+   какой группе ты сейчас находишься. */
+#sidebar.collapsed .nav-group-toggle.has-active {
+  border-left-color: var(--accent-strong);
+  background: var(--nav-tint-group-active);
+}
+
+#sidebar.collapsed .nav-group-items {
+  display: none;
+}
+
+#sidebar.collapsed .nav-item {
+  padding: 9px 0;
+  gap: 0;
+  justify-content: center;
+  position: relative;
+}
+
+/* Рейл 52px — значки в ряд не помещаются (вместе со стопкой тема/тур шире
+   рейла), складываем друг под другом: тема, тур, Dark Pack, Boosty. */
+#sidebar.collapsed .sidebar-footer {
+  flex-direction: column;
+  padding: 10px 0;
+  gap: 8px;
+}
+
+/* В свёрнутом футере спрятанные тема/тур (max-height:0 в #sidebar.collapsed
+   .tour-replay-btn) всё ещё flex-элементы стопки — их внутренний gap:6px
+   иначе создаёт пустую полосу перед первым видимым знаком. */
+#sidebar.collapsed .sidebar-footer-tools {
+  gap: 0;
+}
+
+#sidebar.collapsed .city-switch {
+  max-height: 0;
+  padding: 0 20px;
+  margin-bottom: 0;
+  opacity: 0;
+  border-bottom-color: transparent;
+}
+
+/* Пояснение раздела для свёрнутой панели — тот же визуальный язык, что и
+   .field-tip (см. форму создания города): тёмная плашка, скруглённая рамка,
+   тень. В отличие от .field-tip это не ::after конкретного поля, а один
+   переиспользуемый элемент, создаваемый и позиционируемый через JS
+   (initSidebarNavTips() в scripts.js) с position:fixed — CSS ::after внутри
+   .nav-item сюда не годится: .nav-menu держит overflow-y:auto для прокрутки
+   списка, а по спеке overflow-x у такого элемента не может остаться visible
+   (браузер обрезает его в auto вместе с overflow-y), так что всплывашка
+   всегда обрезалась бы по правому краю 52px колонки. */
+.nav-tip {
+  position: fixed;
+  transform: translateY(-50%) translateX(-4px);
+  width: max-content;
+  max-width: min(240px, 60vw);
+  padding: 8px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  color: var(--text2);
+  font-family: var(--f-body);
+  font-size: var(--fs-lg);
+  font-weight: 400;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  z-index: var(--z-tooltip, 9600);
+}
+
+.nav-tip.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ── Всплывающая панель группы в рейле ─────────────────────────────────────
+   Тот же жанр, что .nav-tip выше, и та же причина жить в position:fixed вне
+   .nav-menu — её overflow обрезал бы любого потомка. Рамка ярче подсказки
+   (--border2): панель интерактивна и лежит поверх контента, ей нужен более
+   твёрдый край. Позиционирование считает scripts.js. */
+.nav-flyout {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  max-width: min(240px, 60vw);
+  padding: 6px 0 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-lg);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-4px);
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  z-index: var(--z-tooltip, 9600);
+}
+
+.nav-flyout.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+
+/* Без подписи панель в рейле неопознаваема: значка группы рядом мало,
+   он тоже без текста. Типографика — та же, что у метки в развёрнутом меню. */
+.nav-flyout-title {
+  font-family: var(--f-heading);
+  font-size: var(--fs-3xs);
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+/* Горизонтальные поля живут на строках, а не на панели: иначе подсветка
+   активного пункта не дотягивается до её краёв. */
+.nav-flyout-item {
+  padding: 5px 16px;
+}
+
+/* Touch devices: guarantee a comfortable tap target (WCAG 2.5.5) on the
+   compact buttons/inputs without enlarging anything on mouse-driven desktops. */
+@media (pointer: coarse) {
+
+  .btn-icon, .tab-btn, .chron-tab, .modp-tab, .cdet-tab, .chr-detail-tab,
+  .mod-fill-add-btn, .chd-recap-btn, .chr-modal-btn, .modp-back-btn,
+  .modp-gen-btn, .modp-close-btn, .modp-del-btn, .chr-delete-btn,
+  .chp-create-btn, .btn-create-char, .filter-select, .filter-input,
+  .form-control, .ais-input, .ais-select, .chr-form-input,
+  .city-edit-btn, .city-del-btn, .mod-gen-scenario-btn, .nav-item,
+  .nav-group-toggle, .nav-flyout-item,
+  .cdet-faction-chip, .modp-edit-btn,
+  .tour-replay-btn, .city-switch-add, .chd-dir-btn, button.chron-chip,
+  .chron-toggle, .sess-scene-btn, .modp-session-edit, .modp-session-delete,
+  .cdet-rel-add-btn, .cdet-rel-del-btn, .city-districts-add-btn, .city-district-del-btn,
+  .city-district-add-loc-btn, .btn-submit {
+    min-height: 44px;
+  }
+
+  .modp-field-regen-btn, .field-tip {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* .btn-icon уже получает min-height: 44px выше; #btn-reset (тикет 4.1) теперь
+     содержит только символ «↺» без текста — без явного min-width узкая иконочная
+     кнопка не дотягивает до 44px по ширине на touch. Та же история у стрелок
+     навигации сцен (только «←»/«→», без слова «Сцена»). */
+  .btn-icon, .sess-scene-btn {
+    min-width: 44px;
+  }
+
+  .modal-close, .info-close, .chr-detail-close, .lightbox-close, .cdet-delete-btn, .cdet-prompt-copy {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
