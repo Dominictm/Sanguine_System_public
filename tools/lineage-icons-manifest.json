@@ -1,0 +1,32 @@
+[
+  {
+    "slug": "vampire",
+    "scene": "a bat with spread wings seen from the front"
+  },
+  {
+    "slug": "fairy",
+    "scene": "a butterfly with spread wings seen from above"
+  },
+  {
+    "slug": "mortal",
+    "scene": "a plain standing person silhouette, full body, front view, arms at the sides",
+    "negative": "(text:1.6), (letters:1.5), color, colorful, orange, blue, green, yellow, brown, purple, photo, photorealistic, realistic, 3d render, cinematic lighting, depth of field, detailed texture, hair strands, shading, soft light, glow, gradient, face features, facial features, portrait, hands close up, fingers, clothing folds, wrinkles, two people, crowd, group, scene, landscape, desert, sand, environment, room, wall, floor, table, background objects, ornate frame, filigree border, ring border, circle border, multiple subjects, collage, watermark, signature, grey background, light background, small subject, large empty margin, blurry, low contrast, washed out, deformed, extra limbs"
+  },
+  {
+    "slug": "werewolf",
+    "scene": "a wolf standing in profile"
+  },
+  {
+    "slug": "mage",
+    "scene": "a stylized eye glyph with a round pupil"
+  },
+  {
+    "slug": "hunter",
+    "scene": "an axe with a long handle seen from the side"
+  },
+  {
+    "slug": "unknown",
+    "scene": "a large question mark symbol",
+    "negative": "color, colorful, orange, blue, green, yellow, brown, purple, photo, photorealistic, realistic, 3d render, cinematic lighting, depth of field, bokeh, detailed texture, shading, soft light, glow, gradient, (human:1.5), (person:1.5), (face:1.5), (hands:1.5), hood, hoodie, cloak, portrait, human figure, creature, scene, landscape, environment, room, wall, floor, table, background objects, ornate frame, filigree border, decorated corners, ring border, circle border, multiple subjects, collage, watermark, signature, sentence, paragraph, several letters, alphabet, grey background, light background, small subject, large empty margin, blurry, low contrast, washed out, deformed"
+  }
+]

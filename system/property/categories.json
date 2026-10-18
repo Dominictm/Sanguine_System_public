@@ -1,0 +1,27 @@
+[
+  {
+    "id": "transport",
+    "name": "Транспорт",
+    "order": 0
+  },
+  {
+    "id": "weapons",
+    "name": "Оружие",
+    "order": 1
+  },
+  {
+    "id": "armor",
+    "name": "Броня",
+    "order": 2
+  },
+  {
+    "id": "artifacts",
+    "name": "Артефакты",
+    "order": 3
+  },
+  {
+    "id": "misc",
+    "name": "Мелочи",
+    "order": 4
+  }
+]
