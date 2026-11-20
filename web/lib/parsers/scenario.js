@@ -1,0 +1,358 @@
+'use strict';
+// Module scenario.md section parsing and mutation. Extracted from
+// parsers.js during the 2026-07-12 decomposition. Sole consumer:
+// web/routes/modules/shared.js.
+
+// ── Scenario sections (scenario.md ## split) ─────────────────────────────────
+// Splits a module's scenario.md into independently editable/regenerable blocks
+// by top-level `## ` headings. Real generated scenarios don't follow a fixed
+// heading list (scene titles vary each time — "Пролог", "Сцена 1 — Метро",
+// "Финал — Манеж" …), so this parses by WHATEVER `## ` headings are actually
+// present rather than matching a hardcoded set of names.
+/**
+ * @param {string} raw — содержимое scenario.md
+ * @returns {{preamble: string, sections: {heading: string, body: string}[]}}
+ *   preamble — всё до первого `## ` (H1-заголовок, хлебные крошки, `---`), не редактируется по разделам
+ */
+// Разбивает тело `## `-раздела на вводный текст (до первого `### `) и список
+// вложенных `### `-подразделов — используется и при первичном парсинге
+// (parseScenarioSections), и при пересборке одного блока целиком после его
+// AI-перегенерации (см. routes/modules.js scenario/block/regenerate).
+function splitH3Body(body) {
+  const h3Idx = body.search(/^###\s+/m);
+  if (h3Idx === -1) return { intro: body, children: [] };
+  const intro = body.slice(0, h3Idx).replace(/\s+$/, '');
+  const children = [];
+  const h3parts = body.slice(h3Idx).split(/\n(?=###\s+)/);
+  for (const h3part of h3parts) {
+    const h3nl = h3part.indexOf('\n');
+    const heading = (h3nl === -1 ? h3part : h3part.slice(0, h3nl)).replace(/^###\s+/, '').trim();
+    let h3body = h3nl === -1 ? '' : h3part.slice(h3nl + 1);
+    h3body = h3body.replace(/^\n+/, '').replace(/\s+$/, '');
+    children.push({ heading, body: h3body });
+  }
+  return { intro, children };
+}
+
+function parseScenarioSections(raw) {
+  const text = String(raw == null ? '' : raw).replace(/^﻿/, '').replace(/\r\n/g, '\n');
+  const firstIdx = text.search(/^##\s+/m);
+  if (firstIdx === -1) return { preamble: text, sections: [] };
+
+  const preamble = text.slice(0, firstIdx);
+  const rest = text.slice(firstIdx);
+  const parts = rest.split(/\n(?=##\s+)/);
+  const sections = [];
+  for (const part of parts) {
+    const nl = part.indexOf('\n');
+    const heading = (nl === -1 ? part : part.slice(0, nl)).replace(/^##\s+/, '').trim();
+    let body = nl === -1 ? '' : part.slice(nl + 1);
+    // Trailing "---" divider before the NEXT heading belongs to the layout,
+    // not to this section's content — strip only if it's the very last thing.
+    body = body.replace(/\n+---+\s*$/, '').replace(/^\n+/, '').replace(/\s+$/, '');
+
+    // Some модуль-шаблоны вкладывают отдельные сцены (или, в новом формате,
+    // отдельные поля сцены — «Описание для игрока», «Колорит» и т.д.) как
+    // `### ` под общим `## `-заголовком — каждая такая единица должна
+    // редактироваться/перегенерироваться независимо, поэтому разворачиваем их
+    // в отдельные разделы (level 3, с привязкой к родительскому heading).
+    const { intro, children } = splitH3Body(body);
+    if (children.length) {
+      sections.push({ heading, body: intro, level: 2, parent: null });
+      for (const c of children) sections.push({ heading: c.heading, body: c.body, level: 3, parent: heading });
+    } else {
+      sections.push({ heading, body, level: 2, parent: null });
+    }
+  }
+  return { preamble, sections };
+}
+
+// Пересобирает preamble + плоский список sections (level 2/3, с parent у
+// level-3) обратно в полный текст scenario.md. Используется replaceScenarioSection
+// и scenario/block/regenerate — единственное место, знающее формат сборки
+// (`---` только между top-level блоками, `### ` дети — без него).
+function serializeScenarioSections(preamble, sections) {
+  const blocks = [];
+  for (let i = 0; i < sections.length; i++) {
+    const s = sections[i];
+    if (s.level === 3) continue; // handled by its parent below
+    // Кодревью 2026-08-11: раньше отсутствие собственного intro-тела у секции
+    // («## Пролог»/«## Сцена N» в новом 3-блочном шаблоне — весь контент живёт
+    // в ### -детях, s.body пуст) давало лишнюю пустую строку перед первым
+    // ребёнком (`## Heading\n\n` + `\n### Child` = 2 пустые строки вместо 1).
+    // Собираем все части (заголовок, опциональное тело, каждый ### -ребёнок)
+    // единым join('\n\n') — интервал между частями одинаковый независимо от
+    // того, какие из них присутствуют.
+    const parts = [`## ${s.heading}`];
+    if (s.body) parts.push(s.body);
+    for (let j = i + 1; j < sections.length && sections[j].level === 3 && sections[j].parent === s.heading; j++) {
+      parts.push(`### ${sections[j].heading}\n\n${sections[j].body}`);
+    }
+    blocks.push(parts.join('\n\n') + '\n');
+  }
+  return preamble.replace(/\n*$/, '\n\n') + blocks.join('\n---\n\n');
+}
+
+/**
+ * Заменяет содержимое одного раздела (по заголовку, опционально уточнённому
+ * родителем — см. дизамбигуацию в scenario/section эндпоинтах) и пересобирает
+ * файл целиком.
+ * @param {string} raw — содержимое scenario.md
+ * @param {string} heading — точный текст заголовка (как в `## <heading>` / `### <heading>`)
+ * @param {string} newBody — новое содержимое раздела (без строки заголовка)
+ * @param {string|null} [parent] — если указан, ищет раздел ТОЛЬКО среди детей этого родителя
+ *   (разные сцены нередко используют одинаковые названия полей — «GM-подсказки»,
+ *   «Описание для игрока» — без parent совпадёт первый попавшийся)
+ * @returns {string} обновлённый полный текст; если заголовок не найден — возвращает raw без изменений
+ */
+function replaceScenarioSection(raw, heading, newBody, parent) {
+  const { preamble, sections } = parseScenarioSections(raw);
+  const idx = findScenarioSectionIndex(sections, heading, parent);
+  if (idx === -1) return raw;
+  sections[idx] = { ...sections[idx], body: String(newBody == null ? '' : newBody).trim() };
+  return serializeScenarioSections(preamble, sections);
+}
+
+// Находит индекс раздела по заголовку; если передан parent — совпадение
+// должно быть именно среди его детей (см. replaceScenarioSection).
+function findScenarioSectionIndex(sections, heading, parent) {
+  if (parent != null) {
+    const i = sections.findIndex(s => s.heading === heading && s.parent === parent);
+    if (i !== -1) return i;
+  }
+  return sections.findIndex(s => s.heading === heading);
+}
+
+/**
+ * Батч-версия replaceScenarioSection — применяет несколько замен за один
+ * parse/serialize проход (одна файловая запись вместо N) для кнопки
+ * «Сохранить всё» на блоке сценария.
+ * @param {string} raw
+ * @param {{heading:string, parent?:string, body:string}[]} replacements
+ * @returns {{ text: string, skipped: string[] }} skipped — заголовки, для которых раздел не найден
+ */
+function replaceScenarioSections(raw, replacements) {
+  const { preamble, sections } = parseScenarioSections(raw);
+  const skipped = [];
+  for (const r of replacements) {
+    const idx = findScenarioSectionIndex(sections, r.heading, r.parent);
+    if (idx === -1) { skipped.push(r.heading); continue; }
+    sections[idx] = { ...sections[idx], body: String(r.body == null ? '' : r.body).trim() };
+  }
+  return { text: serializeScenarioSections(preamble, sections), skipped };
+}
+
+// Метка «сценарий был изменён вручную (добавлена своя сцена)» — живёт в
+// preamble scenario.md (до первого `## `, значит никогда не рендерится в
+// самой вкладке «Сценарий» — см. _renderScenarioPanel). Снимается точечно
+// при перегенерации блока «Финал» (routes/modules.js scenario/block/regenerate).
+const SCENE_ADDED_MARKER_RE = /\n?<!--\s*meta:sceneAdded:\s*1\s*-->\n?/i;
+
+// Проверяет, является ли заголовок блока «Финал» (в т.ч. с подзаголовком —
+// «Финал — Название»), а не просто словом, начинающимся на «Финал»
+// («Финальная сцена», «Финал пролога» и т.п. — не совпадают).
+function isFinaleHeading(heading) {
+  return /^Финал(?:\s*[—–:.-].*)?$/i.test(heading);
+}
+
+function hasManualSceneMarker(raw) {
+  return SCENE_ADDED_MARKER_RE.test(raw);
+}
+
+function addManualSceneMarker(raw) {
+  if (hasManualSceneMarker(raw)) return raw;
+  const firstHeadingIdx = raw.search(/^##\s+/m);
+  if (firstHeadingIdx === -1) return raw.replace(/\n*$/, '\n') + '<!-- meta:sceneAdded: 1 -->\n';
+  return raw.slice(0, firstHeadingIdx) + '<!-- meta:sceneAdded: 1 -->\n' + raw.slice(firstHeadingIdx);
+}
+
+function clearManualSceneMarker(raw) {
+  return raw.replace(SCENE_ADDED_MARKER_RE, '\n');
+}
+
+/**
+ * Добавляет пустую сцену «## Сцена N[ — title]» перед блоком «Финал» (или в
+ * конец документа, если «Финал» нет), с двумя заготовленными полями внутри.
+ * Номер сцены — на 1 больше максимального среди уже существующих «Сцена N».
+ * Ставит метку hasManualSceneMarker (см. выше) — используется UI, чтобы
+ * предложить перегенерировать «Финал» под новую сцену.
+ * @param {string} raw
+ * @param {string} [title] — необязательный подзаголовок сцены («Сцена N — <title>»)
+ * @returns {{ text: string, heading: string }} heading — точный заголовок вставленной сцены
+ */
+function insertScenarioScene(raw, title) {
+  const { preamble, sections } = parseScenarioSections(raw);
+  const nums = sections
+    .filter(s => s.level === 2)
+    .map(s => parseInt((s.heading.match(/^Сцена\s*(\d+)/i) || [])[1], 10))
+    .filter(n => !Number.isNaN(n));
+  const nextNum = nums.length ? Math.max(...nums) + 1 : 1;
+  const safeTitle = String(title || '').replace(/[\r\n]+/g, ' ').trim();
+  const heading = `Сцена ${nextNum}${safeTitle ? ` — ${safeTitle}` : ''}`;
+
+  const newScene  = { heading, body: '', level: 2, parent: null };
+  const newFields = [
+    { heading: 'Описание для игрока', body: '⚠️ Заполни описание сцены для игрока.', level: 3, parent: heading },
+    { heading: 'Колорит', body: '⚠️ 2-3 детали места/времени, которые нельзя перепутать с другим городом.', level: 3, parent: heading },
+  ];
+
+  const finaleIdx = sections.findIndex(s => s.level === 2 && isFinaleHeading(s.heading));
+  const insertAt  = finaleIdx === -1 ? sections.length : finaleIdx;
+  const newSections = [
+    ...sections.slice(0, insertAt),
+    newScene, ...newFields,
+    ...sections.slice(insertAt),
+  ];
+  const text = addManualSceneMarker(serializeScenarioSections(preamble, newSections));
+  return { text, heading };
+}
+
+// Обязательные смысловые блоки сценария — ровно три типа верхнего уровня:
+// Пролог/Сцены прямыми `##`-заголовками (без обёртки), Финал; плюс колорит
+// (обязателен внутри каждой сцены, см. checkScenarioStructure). Секреты
+// Мастера (GM-справка) вплетены прозой в Пролог — больше не отдельный
+// проверяемый раздел; «Открытые вопросы после модуля» тоже убраны из шаблона
+// (упрощение 2026-08-09, см. system/rules/module_rules.md).
+const SCENARIO_REQUIRED_TOPICS = [
+  { key: 'setup',    label: 'Пролог / завязка',         re: /Пролог|Завязк/i },
+  { key: 'scenes',   label: 'Сцены',                    re: /Сцен/i },
+  { key: 'finale',   label: 'Финал / развязка',         re: /Финал|Кульминаци|Развязка|Раскрытие/i },
+  { key: 'flavor',   label: 'Колорит города',           re: /Колорит/i },
+];
+
+/**
+ * Проверяет, что сгенерированный/отредактированный сценарий покрывает все
+ * обязательные смысловые блоки из module_rules.md — только по заголовкам
+ * разделов (наличие ОТДЕЛЬНОГО раздела на тему, а не просто упоминания).
+ * @param {string} raw — содержимое scenario.md
+ * @returns {{missing: {key:string,label:string}[], present: string[]}}
+ */
+function checkScenarioStructure(raw) {
+  const { sections } = parseScenarioSections(raw);
+  const headings = sections.map(s => s.heading);
+  const joined   = headings.join(' | ');
+  const missing  = SCENARIO_REQUIRED_TOPICS.filter(t => !t.re.test(joined)).map(t => ({ key: t.key, label: t.label }));
+  return { missing, present: headings };
+}
+
+// ── Scenario heading normalization ────────────────────────────────────────────
+// Нормализует уровни заголовков, если модель сдвинула их на +1
+// (сцены `#` вместо `##`, поля `##` вместо `###`).
+// Детерминированный демоут на один уровень, идемпотентный.
+
+function normalizeScenarioHeadings(raw) {
+  if (!raw) return raw;
+  let text = String(raw).replace(/^﻿/, '').replace(/\r\n/g, '\n');
+
+  // Первый блочный заголовок (после preamble; титул `# Сценарий`, если модель
+  // его включила в ответ, пропускается — он единственный законный H1).
+  const lines = text.split('\n');
+  const isTitleRe = /^#\s+Сценарий(?=[\s—–:.-]|$)/;
+  let firstBlockIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s+\S/);
+    if (!m) continue;
+    if (isTitleRe.test(lines[i])) continue; // титул не в счёт
+    firstBlockIdx = i;
+    break;
+  }
+
+  if (firstBlockIdx === -1) return raw; // нет блочных заголовков
+
+  const firstLine = lines[firstBlockIdx];
+  // Если первый блочный заголовок уже `## ` — канон, ничего не делаем
+  if (/^##\s+/.test(firstLine)) return raw;
+
+  // Если первый блочный заголовок = `# ` (сдвиг на +1) — демоут на +1
+  if (/^#\s+/.test(firstLine)) {
+    const result = lines.map((line) => {
+      // Титул `# Сценарий` не трогаем
+      if (isTitleRe.test(line)) return line;
+      // Все заголовки уровня N → N+1
+      const m = line.match(/^(#{1,6})\s+(\S)/);
+      if (m) {
+        return '#' + m[1] + ' ' + m[2] + line.slice(m[0].length);
+      }
+      return line;
+    });
+    return result.join('\n');
+  }
+
+  return raw;
+}
+
+// ── Scenario canonical structure check ────────────────────────────────────────
+// Проверяет соответствие сценария эталонной структуре.
+// Возвращает { ok, errors: string[], normalized: boolean }.
+// ok=false только при грубых нарушениях (нет Пролог/Сцены/Финал).
+
+function checkScenarioCanonical(raw) {
+  if (!raw) return { ok: false, errors: ['Пустой сценарий'], normalized: false };
+
+  const text = String(raw).replace(/^﻿/, '').replace(/\r\n/g, '\n');
+  const { sections, preamble } = parseScenarioSections(text);
+  const errors = [];
+  const isTitleRe = /^#\s+Сценарий(?=[\s—–:.-]|$)/;
+
+  // 1. Ровно один `#`-заголовок и это титул `# Сценарий`
+  const h1Matches = text.match(/^#\s+\S.*$/gm) || [];
+  if (h1Matches.length !== 1 || !isTitleRe.test(h1Matches[0])) {
+    const shiftedH1 = h1Matches.filter(h => !isTitleRe.test(h));
+    if (shiftedH1.length > 0) {
+      errors.push('Обнаружен сдвинутый уровень заголовков (модель использует # вместо ##)');
+    }
+  }
+
+  // 2. Все top-level блоки `##` — только Пролог/Сцена N/Финал
+  const topBlocks = sections.filter(s => s.level === 2);
+  const badBlocks = topBlocks.filter(s =>
+    !/^(Пролог|Сцена\s*\d+|Финал)/i.test(s.heading)
+  );
+  for (const b of badBlocks) {
+    errors.push(`Неэталонный top-level блок: «${b.heading}»`);
+  }
+
+  // 3. В каждой `## Сцена N` присутствует `### Колорит`
+  const scenes = topBlocks.filter(s => /^Сцена\s*\d+/i.test(s.heading));
+  for (const scene of scenes) {
+    const sceneChildren = sections.filter(s =>
+      s.level === 3 && s.parent === scene.heading
+    );
+    const hasColrit = sceneChildren.some(c => /^Колорит$/i.test(c.heading));
+    if (!hasColrit) {
+      errors.push(`В сцене «${scene.heading}» отсутствует «### Колорит»`);
+    }
+  }
+
+  // 4. Meta-строки обязательны (в preamble до первого `##`)
+  const hasMetaNpcs = /<!--\s*meta:npcs:/.test(preamble);
+  const hasMetaLocs = /<!--\s*meta:locations:/.test(preamble);
+  if (!hasMetaNpcs) errors.push('Отсутствует meta:npcs');
+  if (!hasMetaLocs) errors.push('Отсутствует meta:locations');
+
+  // 5. Шапка (только preamble) — каноническая ссылка `../../chronicle.md`
+  if (/\.\.\/\.\.\/events\.md/.test(preamble)) {
+    errors.push('Шапка содержит ../../events.md вместо ../../chronicle.md');
+  }
+
+  // ok=false только при грубых нарушениях: отсутствие обязательных смысловых
+  // разделов (Пролог/Сцены/Финал) — дублирует missingTopics из checkScenarioStructure.
+  // Колорит в грубый счёт НЕ входит (его отсутствие — warning, см. п.3; грубую
+  // блокировку по нему держит checkScenarioStructure).
+  // Считаем по ВСЕМ заголовкам (включая ### -детей: Колорит живёт на 3-м уровне).
+  const allHeadings = sections.map(s => s.heading).join(' | ');
+  const grossMissing = SCENARIO_REQUIRED_TOPICS
+    .filter(t => t.key !== 'flavor' && !t.re.test(allHeadings))
+    .length;
+
+  return { ok: grossMissing === 0, errors, normalized: false };
+}
+
+module.exports = {
+  parseScenarioSections, splitH3Body, serializeScenarioSections,
+  replaceScenarioSection, findScenarioSectionIndex, replaceScenarioSections,
+  SCENE_ADDED_MARKER_RE, isFinaleHeading, hasManualSceneMarker,
+  addManualSceneMarker, clearManualSceneMarker, insertScenarioScene,
+  SCENARIO_REQUIRED_TOPICS, checkScenarioStructure,
+  normalizeScenarioHeadings, checkScenarioCanonical,
+};

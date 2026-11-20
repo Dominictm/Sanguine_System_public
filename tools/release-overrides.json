@@ -1,0 +1,7 @@
+[
+  {
+    "file": "start.bat",
+    "find": "set CITY=paris",
+    "replace": "set CITY="
+  }
+]

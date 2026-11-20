@@ -1,0 +1,47 @@
+[
+  {
+    "slug": "dinamic",
+    "name": "Динамичная",
+    "name_en": "Dynamic",
+    "element": "Огонь",
+    "description": "Сущность Перемен: порыв, действие, разрушение застоя. Аватар толкает мага вперёд — творить, рисковать, ломать отжившее; покой для него — смерть.",
+    "description_en": "The Essence of Change: impulse, action, the breaking of stagnation. The Avatar drives the mage onward — to create, to risk, to break what is obsolete; rest is death to it.",
+    "category": "essences"
+  },
+  {
+    "slug": "static",
+    "name": "Статичная",
+    "name_en": "Static",
+    "element": "Земля",
+    "description": "Сущность порядка: постоянство, защита, сохранение созданного. Аватар держит форму мира — укреплять, упорядочивать, доводить до совершенства; перемена ради перемены ему чужда.",
+    "description_en": "The Essence of order: permanence, protection, preservation of what is built. The Avatar holds the world's shape — to fortify, to order, to perfect; change for its own sake is alien to it.",
+    "category": "essences"
+  },
+  {
+    "slug": "primordial",
+    "name": "Изначальная",
+    "name_en": "Primordial",
+    "element": "Вода",
+    "description": "Сущность Хаоса и сокровенных тайн: глубина, из которой всё вышло. Аватар тянет мага к первоосновам — снам, крови, древним силам; его шёпот не всегда удаётся разобрать.",
+    "description_en": "The Essence of Chaos and hidden mysteries: the depth from which all things came. The Avatar pulls the mage toward first things — dreams, blood, ancient powers; its whisper is not always easy to make out.",
+    "category": "essences"
+  },
+  {
+    "slug": "questing",
+    "name": "Ищущая",
+    "name_en": "Questing",
+    "element": "Воздух",
+    "description": "Сущность странствий: поиск, вопросы, дорога без конца. Аватар не даёт магу осесть — вести дальше, за горизонт, к следующему ответу, за которым встанет новый вопрос.",
+    "description_en": "The Essence of journeying: seeking, questions, a road without end. The Avatar never lets the mage settle — onward, past the horizon, toward the next answer behind which a new question stands.",
+    "category": "essences"
+  },
+  {
+    "slug": "infinite",
+    "name": "Бесконечность",
+    "name_en": "Infinite",
+    "element": "",
+    "description": "Сущность за гранью постижимого: Аватар, не укладывающийся ни в одну меру. Встречается только у персонажей рассказчика — игрокам брать запрещено.",
+    "description_en": "The Essence beyond comprehension: an Avatar that fits no measure. Found only in Storyteller characters — forbidden to players.",
+    "category": "essences"
+  }
+]

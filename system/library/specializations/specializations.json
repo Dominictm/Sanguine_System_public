@@ -1,0 +1,345 @@
+[
+  {
+    "slug": "draka_gryaznye_priemy",
+    "ability": "Драка",
+    "lineage": "",
+    "name": "грязные приёмы",
+    "description": "Бой без правил: удары ниже пояса, песок в глаза, подручные предметы."
+  },
+  {
+    "slug": "draka_udary",
+    "ability": "Драка",
+    "lineage": "",
+    "name": "удары",
+    "description": "Поставленные удары руками и ногами, серии и добивание."
+  },
+  {
+    "slug": "draka_broski",
+    "ability": "Драка",
+    "lineage": "",
+    "name": "броски",
+    "description": "Броски и подсечки, перевод противника на землю."
+  },
+  {
+    "slug": "draka_zahvaty",
+    "ability": "Драка",
+    "lineage": "",
+    "name": "захваты",
+    "description": "Удержания, заломы и удушающие захваты."
+  },
+  {
+    "slug": "zapugivanie_zavualirovannye_ugrozy",
+    "ability": "Запугивание",
+    "lineage": "",
+    "name": "завуалированные угрозы",
+    "description": "Намёки и недосказанности, заставляющие жертву додумать худшее."
+  },
+  {
+    "slug": "zapugivanie_zloupotreblenie_vlastyu",
+    "ability": "Запугивание",
+    "lineage": "",
+    "name": "злоупотребление властью",
+    "description": "Давление должностью, связями и административным ресурсом."
+  },
+  {
+    "slug": "zapugivanie_fizicheskoe_prinuzhdenie",
+    "ability": "Запугивание",
+    "lineage": "",
+    "name": "физическое принуждение",
+    "description": "Демонстрация силы и прямое телесное давление."
+  },
+  {
+    "slug": "zapugivanie_shantazh",
+    "ability": "Запугивание",
+    "lineage": "",
+    "name": "шантаж",
+    "description": "Угрозы разоблачением и использование компромата."
+  },
+  {
+    "slug": "zapugivanie_travlya",
+    "ability": "Запугивание",
+    "lineage": "",
+    "name": "травля",
+    "description": "Систематическое преследование и психологическое изматывание жертвы."
+  },
+  {
+    "slug": "hitrost_soblaznenie",
+    "ability": "Хитрость",
+    "lineage": "",
+    "name": "соблазнение",
+    "description": "Обаяние и флирт как способ добиться своего."
+  },
+  {
+    "slug": "hitrost_iskusnaya_lozh",
+    "ability": "Хитрость",
+    "lineage": "",
+    "name": "искусная ложь",
+    "description": "Правдоподобное враньё с деталями, в которое верят."
+  },
+  {
+    "slug": "hitrost_moshennichestvo",
+    "ability": "Хитрость",
+    "lineage": "",
+    "name": "мошенничество",
+    "description": "Аферы, подлог и выманивание денег и ценностей."
+  },
+  {
+    "slug": "bditelnost_shumy",
+    "ability": "Бдительность",
+    "lineage": "",
+    "name": "шумы",
+    "description": "Чуткий слух: шаги, шорохи и скрипы, которых другие не замечают."
+  },
+  {
+    "slug": "bditelnost_podslushivanie",
+    "ability": "Бдительность",
+    "lineage": "",
+    "name": "подслушивание",
+    "description": "Умение расслышать чужой разговор и вычленить важное."
+  },
+  {
+    "slug": "bditelnost_melkie_detali",
+    "ability": "Бдительность",
+    "lineage": "",
+    "name": "мелкие детали",
+    "description": "Глаз цепляется за мелочи: царапины, пятна, несоответствия."
+  },
+  {
+    "slug": "bditelnost_tolpy",
+    "ability": "Бдительность",
+    "lineage": "",
+    "name": "толпы",
+    "description": "Чтение толпы: настроение, зачинщики, надвигающаяся давка."
+  },
+  {
+    "slug": "empatiya_emotsii",
+    "ability": "Эмпатия",
+    "lineage": "",
+    "name": "эмоции",
+    "description": "Распознавание чужих чувств по лицу, голосу и жестам."
+  },
+  {
+    "slug": "empatiya_motivy",
+    "ability": "Эмпатия",
+    "lineage": "",
+    "name": "мотивы",
+    "description": "Понимание скрытых причин чужих поступков."
+  },
+  {
+    "slug": "empatiya_zavoevanie_doveriya",
+    "ability": "Эмпатия",
+    "lineage": "",
+    "name": "завоевание доверия",
+    "description": "Умение расположить к себе и вызвать откровенность."
+  },
+  {
+    "slug": "vozhdenie_vnedorozhniki",
+    "ability": "Вождение",
+    "lineage": "",
+    "name": "внедорожники",
+    "description": "Езда по бездорожью: грязь, броды, крутые склоны."
+  },
+  {
+    "slug": "vozhdenie_mototsikly",
+    "ability": "Вождение",
+    "lineage": "",
+    "name": "мотоциклы",
+    "description": "Уверенное управление мотоциклом на скорости и в потоке."
+  },
+  {
+    "slug": "vozhdenie_gonki",
+    "ability": "Вождение",
+    "lineage": "",
+    "name": "гонки",
+    "description": "Спортивное вождение: траектории, обгоны, предел машины."
+  },
+  {
+    "slug": "vozhdenie_uhod_ot_pogon",
+    "ability": "Вождение",
+    "lineage": "",
+    "name": "уход от погонь",
+    "description": "Отрыв от преследования в городе и на трассе."
+  },
+  {
+    "slug": "strelba_pistolety",
+    "ability": "Стрельба",
+    "lineage": "",
+    "name": "пистолеты",
+    "description": "Скоростная стрельба из пистолета на короткой дистанции."
+  },
+  {
+    "slug": "strelba_snayperskoe_delo",
+    "ability": "Стрельба",
+    "lineage": "",
+    "name": "снайперское дело",
+    "description": "Точные выстрелы на дальних дистанциях из винтовки."
+  },
+  {
+    "slug": "strelba_revolvery",
+    "ability": "Стрельба",
+    "lineage": "",
+    "name": "револьверы",
+    "description": "Меткая стрельба из револьверов, включая ковбойские приёмы."
+  },
+  {
+    "slug": "strelba_droboviki",
+    "ability": "Стрельба",
+    "lineage": "",
+    "name": "дробовики",
+    "description": "Работа с дробовиком в тесноте: подъезды, коридоры, двери."
+  },
+  {
+    "slug": "skrytnost_nezametnost",
+    "ability": "Скрытность",
+    "lineage": "",
+    "name": "незаметность",
+    "description": "Умение не привлекать взглядов, сливаться с фоном."
+  },
+  {
+    "slug": "skrytnost_slezhka",
+    "ability": "Скрытность",
+    "lineage": "",
+    "name": "слежка",
+    "description": "Незаметное преследование цели пешком и на машине."
+  },
+  {
+    "slug": "skrytnost_tolpy",
+    "ability": "Скрытность",
+    "lineage": "",
+    "name": "толпы",
+    "description": "Растворение в толпе, уход от наблюдения в людных местах."
+  },
+  {
+    "slug": "ispolnenie_tanets",
+    "ability": "Исполнение",
+    "lineage": "",
+    "name": "танец",
+    "description": "Сценический танец, от классики до уличных стилей."
+  },
+  {
+    "slug": "ispolnenie_penie",
+    "ability": "Исполнение",
+    "lineage": "",
+    "name": "пение",
+    "description": "Поставленный голос и вокальные выступления."
+  },
+  {
+    "slug": "ispolnenie_akterskoe_masterstvo",
+    "ability": "Исполнение",
+    "lineage": "",
+    "name": "актёрское мастерство",
+    "description": "Перевоплощение на сцене и перед камерой."
+  },
+  {
+    "slug": "obraschenie_s_zhivotnymi_sobaki",
+    "ability": "Обращение с животными",
+    "lineage": "",
+    "name": "собаки",
+    "description": "Дрессировка и понимание собак, от сторожевых до охотничьих."
+  },
+  {
+    "slug": "obraschenie_s_zhivotnymi_loshadi",
+    "ability": "Обращение с животными",
+    "lineage": "",
+    "name": "лошади",
+    "description": "Верховая езда, уход за лошадьми и работа с ними."
+  },
+  {
+    "slug": "obraschenie_s_zhivotnymi_hischnye_ptitsy",
+    "ability": "Обращение с животными",
+    "lineage": "",
+    "name": "хищные птицы",
+    "description": "Соколиная охота: обучение и работа с ловчими птицами."
+  },
+  {
+    "slug": "remeslo_remont_avtomobiley",
+    "ability": "Ремесло",
+    "lineage": "",
+    "name": "ремонт автомобилей",
+    "description": "Диагностика и починка машин, от мотора до электрики."
+  },
+  {
+    "slug": "zakony_ugolovnye_dela",
+    "ability": "Законы",
+    "lineage": "",
+    "name": "уголовные дела",
+    "description": "Уголовное право и процесс: защита, следствие, суд."
+  },
+  {
+    "slug": "zakony_kontrakty",
+    "ability": "Законы",
+    "lineage": "",
+    "name": "контракты",
+    "description": "Составление и разбор договоров, поиск лазеек в тексте."
+  },
+  {
+    "slug": "zakony_sudebnye_protsedury",
+    "ability": "Законы",
+    "lineage": "",
+    "name": "судебные процедуры",
+    "description": "Знание судебного порядка: заседания, апелляции, сроки."
+  },
+  {
+    "slug": "elektronika_kompyutery",
+    "ability": "Электроника",
+    "lineage": "",
+    "name": "компьютеры",
+    "description": "Железо и софт: сборка, настройка, взлом и защита."
+  },
+  {
+    "slug": "elektronika_bezopasnost",
+    "ability": "Электроника",
+    "lineage": "",
+    "name": "безопасность",
+    "description": "Сигнализации, видеонаблюдение и контроль доступа."
+  },
+  {
+    "slug": "elektronika_telekommunikatsii",
+    "ability": "Электроника",
+    "lineage": "",
+    "name": "телекоммуникации",
+    "description": "Сети и связь: телефония, радио, прослушка и глушение."
+  },
+  {
+    "slug": "okkultizm_sorodichi",
+    "ability": "Оккультизм",
+    "lineage": "",
+    "name": "Сородичи",
+    "description": "Знания о вампирах: кланы, секты, слабости и обычаи."
+  },
+  {
+    "slug": "okkultizm_ritualy",
+    "ability": "Оккультизм",
+    "lineage": "",
+    "name": "ритуалы",
+    "description": "Знание обрядов и церемоний, оккультных и вампирских."
+  },
+  {
+    "slug": "okkultizm_nodizm",
+    "ability": "Оккультизм",
+    "lineage": "",
+    "name": "нодизм",
+    "description": "Изучение Книги Нода и легенд о Каине и Первом Городе."
+  },
+  {
+    "slug": "politika_gorodskaya_politika",
+    "ability": "Политика",
+    "lineage": "",
+    "name": "городская политика",
+    "description": "Интриги городского масштаба: мэрия, council, выборы."
+  },
+  {
+    "slug": "politika_byurokratiya",
+    "ability": "Политика",
+    "lineage": "",
+    "name": "бюрократия",
+    "description": "Ориентация в чиновничьем аппарате и бумажной волоките."
+  },
+  {
+    "slug": "politika_kamarilya",
+    "ability": "Политика",
+    "lineage": "",
+    "name": "Камарилья",
+    "description": "Устройство Камарильи: должности, традиции, дворцовый этикет."
+  }
+]

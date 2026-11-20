@@ -1,0 +1,542 @@
+[
+  {
+    "slug": "avtokrat",
+    "name": "Автократ",
+    "name_en": "Autocrat",
+    "description": "Стремится к власти ради самой власти, а не ради передовых идей. Диктаторы, лидеры банд, школьные хулиганы, корпоративные рейдеры; Сородич-автократ жаждет признания или лидерства в котерии.",
+    "description_en": "Seeks power for its own sake, not for any ideals. Dictators, gang leaders, corporate raiders; a Kindred Autocrat craves recognition or coterie leadership.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда добивается власти над другими индивидами.",
+    "willpower_en": "Regains a Willpower point whenever he gains power over other individuals.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "bonvivan",
+    "name": "Бонвиван",
+    "name_en": "Bon Vivant",
+    "description": "Знает, что жизнь пуста, и наполняет её наслаждениями на полную катушку. Гедонисты, сибариты, плейбои, золотая молодёжь; самоконтроль обычно низок — следствие потакания излишествам.",
+    "description_en": "Knows life is empty and fills it with pleasure to the fullest. Hedonists, sybarites, playboys, golden youth; Self-Control is usually low.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда по-настоящему отрывается и наслаждается жизнью. За особенно удавшийся отрыв рассказчик может вернуть больше одного пункта.",
+    "willpower_en": "Regains Willpower whenever he truly lets go and enjoys life. For an exceptional revel the Storyteller may return more than one point.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "borets",
+    "name": "Борец",
+    "name_en": "Survivor",
+    "description": "Идёт вперёд до последнего, невзирая на трудности; не выносит капитуляции перед судьбой. Изгнанники, бродяги, обездоленные идеалисты; среди Сородичей — объявленные в Кровавую Охоту, свергнутые епископы, скитающиеся носферату.",
+    "description_en": "Pushes on to the last despite hardship and never surrenders to fate. Exiles, drifters, dispossessed idealists; among Kindred — Blood Hunt targets, deposed bishops, wandering Nosferatu.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда превозмогает опасность благодаря упорству или даёт совет, помогающий выстоять другому.",
+    "willpower_en": "Regains Willpower whenever he overcomes danger through persistence or gives counsel that helps another endure.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "bryuzga",
+    "name": "Брюзга",
+    "name_en": "Curmudgeon",
+    "description": "Законченный циник: стакан наполовину пуст, веселья в жизни нет. Фаталист и пессимист, не уважает окружающих; за каждым событием видит происки тиранов-старейшин или самонадеянных неонатов.",
+    "description_en": "A thorough cynic: the glass is half empty and life holds no fun. Fatalist and pessimist who sees the scheming of tyrant elders or arrogant neonates behind every event.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда кто-то оправдывает его худшие ожидания. Ожидания нужно озвучить заранее — вслух или шёпотом рассказчику.",
+    "willpower_en": "Regains Willpower whenever someone lives up to his worst expectations. Expectations must be voiced in advance — aloud or whispered to the Storyteller.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "buntar",
+    "name": "Бунтарь",
+    "name_en": "Rebel",
+    "description": "Недовольный элемент против статус-кво: ненавидит саму идею иерархии либо конкретную систему. Подростки, мятежники, нонконформисты; чаще Шабаш, анархи и бруха. Игрок указывает, против какой силы борется персонаж.",
+    "description_en": "A malcontent against the status quo: hates hierarchy itself or one specific system. Teenagers, rebels, nonconformists; often Sabbat, anarchs and Brujah. The player names the power his character opposes.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда совершает поступок, прямо связанный с борьбой против выбранной силы.",
+    "willpower_en": "Regains Willpower whenever he acts in direct struggle against his chosen power.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "vizioner",
+    "name": "Визионер",
+    "name_en": "Visionary",
+    "description": "Заглядывает за грань обыденного и требует от общества большего, чем оно предлагает. Философы, изобретатели, вдохновенные творцы; общество обычно встречает их плохо, хотя прогресс несут именно они.",
+    "description_en": "Looks beyond the mundane and demands more of society than it offers. Philosophers, inventors, inspired creators; society rarely welcomes them, yet they carry progress.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда вербует новых сторонников своей идеи. Важна именно поддержка идеи, а не её реализация.",
+    "willpower_en": "Regains Willpower whenever he recruits new supporters to his idea. What matters is support for the idea, not its realization.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "golovorez",
+    "name": "Головорез",
+    "name_en": "Bravo",
+    "description": "Прав тот, кто сильнее; уважает только силу — физическую или любую, что позволяет расправиться с жертвой. Грабители, шовинисты, бандиты; Сородич злоупотребляет властью или устраняет стоящих на пути.",
+    "description_en": "Might makes right; respects only strength that lets him destroy his victim. Robbers, chauvinists, bandits; a Kindred Bravo abuses power or removes those in his way.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда добивается своего грубой силой, угрозами либо психологическим или общественным давлением.",
+    "willpower_en": "Regains Willpower whenever he gets his way through brute force, threats, or psychological and social pressure.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "guru",
+    "name": "Гуру",
+    "name_en": "Guru",
+    "description": "Аура просветлённости притягивает окружающих; вдохновляет на духовные свершения, даже не самые мирные. Лидеры сект, дзен-мастера, духовники стай Шабаша.",
+    "description_en": "An aura of enlightenment draws others in; inspires spiritual feats, not always peaceful ones. Cult leaders, Zen masters, Sabbat pack priests.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда его совет подвигает кого-то на благое (с его точки зрения) действие, либо когда на него снисходит откровение о его философии.",
+    "willpower_en": "Regains Willpower whenever his counsel moves someone to a good (by his lights) deed, or when revelation about his philosophy descends upon him.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "deviant",
+    "name": "Девиант",
+    "name_en": "Deviant",
+    "description": "Изгой с радикальными, социально неприемлемыми вкусами и убеждениями; мыслитель, не вписывающийся в статус-кво. Экстремисты, эксцентричные знаменитости; Сородичи держатся практик, порицаемых сообществом — вплоть до диаблери.",
+    "description_en": "An outcast with radical, socially unacceptable tastes; a thinker who does not fit the status quo. Extremists, eccentric celebrities; Kindred Deviants keep practices the community condemns.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда безнаказанно попирает нормы общественной морали.",
+    "willpower_en": "Regains Willpower whenever he flouts the norms of public morality with impunity.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "zagadka",
+    "name": "Загадка",
+    "name_en": "Enigma",
+    "description": "Творит странные вещи, смысл которых понятен только ему; остальные считают его эксцентриком или сумасшедшим. Конспирологи, агенты под прикрытием, фанатики Извечной Борьбы.",
+    "description_en": "Does strange things whose meaning only he understands; others deem him eccentric or mad. Conspiracy theorists, undercover agents, fanatics of the Eternal Struggle.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда сбивает кого-нибудь с толку и тем самым успешно осуществляет задуманное.",
+    "willpower_en": "Regains Willpower whenever he baffles someone and thereby accomplishes his design.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "idealist",
+    "name": "Идеалист",
+    "name_en": "Idealist",
+    "description": "Истинно и слепо верит в высшую цель или этические принципы — от триумфа Камарильи до высшей справедливости. Очень молодые и наивные либо очень старые вампиры, искатели Голконды.",
+    "description_en": "Truly and blindly believes in a higher goal or ethics — from the triumph of the Camarilla to supreme justice. Very young and naive or very old vampires, seekers of Golconda.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда достигает цели, не поступаясь принципами, или совершает значимый поступок из верности убеждениям.",
+    "willpower_en": "Regains Willpower whenever he reaches a goal without betraying his principles, or performs a significant act out of fidelity to his beliefs.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "issledovatel",
+    "name": "Исследователь",
+    "name_en": "Investigator",
+    "description": "Существование — загадка для разгадки; методично и критически изучает всё вокруг, пусть его система оценок и смехотворна.",
+    "description_en": "Existence is a riddle to solve; methodically and critically studies everything around him, however laughable his frame of reference.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда логический подход решает проблему, а собранная ранее информация пригождается в аналогичной ситуации.",
+    "willpower_en": "Regains Willpower whenever a logical approach solves a problem, or previously gathered information proves useful in a similar situation.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "kapitalist",
+    "name": "Капиталист",
+    "name_en": "Capitalist",
+    "description": "Знает: спрос рождает предложение, всему есть цена; умеет заставить хотеть то, что предлагает. Торговцы, наёмники, льстецы; важны внешность и влияние, любую мелочь превращает в преимущество.",
+    "description_en": "Knows demand creates supply and everything has a price; can make others want what he offers. Traders, mercenaries, flatterers; appearance and influence matter, trifles become advantage.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда проворачивает удачную сделку — от подержанной машины до чужих долгов.",
+    "willpower_en": "Regains Willpower whenever he pulls off a profitable deal — from a used car to others' debts.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "kayushchiysya",
+    "name": "Кающийся грешник",
+    "name_en": "Penitent",
+    "description": "Считает себя обязанным искупить вину — хотя бы самим своим существованием; мотивация не обязательно религиозна. Самобичеватели, порвавшие с прошлым преступники; Сородичи, накормленные Зверем, или принципиально пьющие кровь животных.",
+    "description_en": "Feels bound to atone for guilt — if only by existing; motives need not be religious. Self-flagellants, reformed criminals; Kindred fed upon by the Beast, or those who drink only animal blood on principle.",
+    "willpower": "Восстанавливает пункт воли, когда чувствует, что искупил хотя бы одно злодеяние. Искупление должно быть равноценно преступлению; последнее слово за рассказчиком.",
+    "willpower_en": "Regains Willpower when he feels he has atoned for at least one sin. Atonement must match the crime; the Storyteller has the final word.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "konformist",
+    "name": "Конформист",
+    "name_en": "Conformist",
+    "description": "Верный последователь: исполняет приказы, следует за лидером и большинством. Поклонники звёзд, рядовые партийцы, народные массы; Сородич ставит интересы клана выше своих.",
+    "description_en": "A loyal follower: obeys orders, follows the leader and the majority. Star worshippers, rank-and-file partisans; a Kindred Conformist puts clan interests above his own.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда помогает добиться успеха своей группе или лидеру, чьим приказам подчиняется.",
+    "willpower_en": "Regains Willpower whenever he helps his group or his leader succeed.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "mazokhist",
+    "name": "Мазохист",
+    "name_en": "Masochist",
+    "description": "Живёт, чтобы узнать предел собственной боли; унижения и страдания — средство самоидентификации. Городские дикари, фанатичные спортсмены; Сородичи — рабы капризов Зверя или одержимые лидеры, не приемлющие неудач.",
+    "description_en": "Lives to learn the limits of his own pain; humiliation and suffering are his identity. Urban savages, fanatical athletes; Kindred slaves to the Beast's whims or obsessed leaders.",
+    "willpower": "Восстанавливает пункт воли, когда добивается успеха через страдания; два пункта — за новый, неизведанный способ чувствовать боль.",
+    "willpower_en": "Regains Willpower when he succeeds through suffering; two points for a new, unexplored way of feeling pain.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "makhinator",
+    "name": "Махинатор",
+    "name_en": "Conniver",
+    "description": "Ищет самый лёгкий путь к успеху чужими руками; убеждён, что все поступили бы так же, просто он первым. Аферисты, коммивояжёры, беспризорники, предприниматели.",
+    "description_en": "Seeks the easiest path to success through others' hands; convinced anyone would do the same, only he did it first. Swindlers, peddlers, urchins, entrepreneurs.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда добивается чего-нибудь обманом или убеждает жертву действовать против собственных интересов.",
+    "willpower_en": "Regains Willpower whenever he gains something by deceit or talks a victim into acting against her own interests.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "muchenik",
+    "name": "Мученик",
+    "name_en": "Martyr",
+    "description": "Терпит лишения из идейных соображений, утешаясь, что его мытарства облегчают чужую участь. Революционеры, утописты, отвергнутые страдальцы; вера бывает искренней или напоказ.",
+    "description_en": "Endures deprivation for ideas, comforted that his suffering eases another's lot. Revolutionaries, utopians, rejected sufferers; faith may be sincere or for show.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда терпит урон или серьёзную утрату во имя идеалов или чужого благополучия.",
+    "willpower_en": "Regains Willpower whenever he suffers harm or grave loss for his ideals or another's welfare.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "nartsiss",
+    "name": "Нарцисс",
+    "name_en": "Gallant",
+    "description": "Яркая тщеславная личность, жаждет всеобщего внимания; окружающие нужны как восторженная толпа. Артисты, избалованные дети; среди Сородичей немало Гарпий и держателей стад обожателей.",
+    "description_en": "A flamboyant, vain personality craving universal attention; others exist as an adoring crowd. Artists, spoiled children; among Kindred — Harpies and herd-keepers.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда производит на кого-нибудь впечатление. Последнее слово за рассказчиком.",
+    "willpower_en": "Regains Willpower whenever he impresses someone. The Storyteller has the final word.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "nastavnik",
+    "name": "Наставник",
+    "name_en": "Pedagogue",
+    "description": "Знает и стремится делиться знанием: послание должно быть услышано и понято. Инструкторы, преподаватели, мастера; бывают достойными учителями и пустословами, влюблёнными в звук собственного голоса.",
+    "description_en": "Knows things and strives to share knowledge: the message must be heard. Instructors, teachers, masters; some worthy, some in love with their own voice.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда узнаёт об успехах своих «учеников» — тех, с кем поделился мудростью.",
+    "willpower_en": "Regains Willpower whenever he learns of his pupils' successes — those with whom he shared wisdom.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "neposeda",
+    "name": "Непоседа",
+    "name_en": "Dilettante",
+    "description": "Интересуется всем, не сосредотачивается ни на чём; бросает начатое ради нового увлечения. Умны и обаятельны, но слабовольны; Сородичи — чаще тореадоры-«Позёры».",
+    "description_en": "Interested in everything, focused on nothing; drops pursuits for the next novelty. Clever and charming but weak-willed; Kindred Dilettantes are often Toreador poseurs.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда увлекается чем-то новым и забрасывает предыдущее увлечение.",
+    "willpower_en": "Regains Willpower whenever he takes up something new and abandons his previous pursuit.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "odinochka",
+    "name": "Одиночка",
+    "name_en": "Loner",
+    "description": "Настолько инаков, что выделяется даже в толпе; имея выбор, предпочтёт остаться наедине с собой. Преступники, радикалы, вольнодумцы; Сородичи — Гангрелы, Равнос, автархи.",
+    "description_en": "So different he stands out even in a crowd; given a choice, stays alone with himself. Criminals, radicals, freethinkers; Kindred Loners are often Gangrel, Ravnos, autarkis.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда самостоятельно добивается чего-то полезного для всей котерии.",
+    "willpower_en": "Regains Willpower whenever he accomplishes something useful for the whole coterie on his own.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "oko_buri",
+    "name": "Око бури",
+    "name_en": "Eye of the Storm",
+    "description": "Распространяет вокруг себя хаос, сохраняя невозмутимость; беспорядки и разрушения витают вокруг него. Лидеры банд, некоторые политики, влиятельные индивиды.",
+    "description_en": "Spreads chaos while staying calm; riots and ruin swirl around him. Gang leaders, certain politicians, influential figures.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда неподалёку случаются общественные беспорядки или иные столь же хаотичные события.",
+    "willpower_en": "Regains Willpower whenever public unrest or equally chaotic events erupt nearby.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "opekun",
+    "name": "Опекун",
+    "name_en": "Caregiver",
+    "description": "Тот, кто дарит утешение: к нему идут поговорить о проблемах. Сиделки, врачи, психиатры; Сородичи защищают смертных-источники, даруют Становление из сентиментальности или сами создают травмы, чтобы утешать.",
+    "description_en": "One who gives comfort: others bring him their troubles. Nurses, doctors, psychiatrists; Kindred protect their vessels, Embrace out of sentiment, or stage traumas to soothe the victims.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда удаётся кого-нибудь защитить или утешить.",
+    "willpower_en": "Regains Willpower whenever he manages to protect or comfort someone.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "organizator",
+    "name": "Организатор",
+    "name_en": "Director",
+    "description": "Нет ничего хуже хаоса; власть — ради оптимизации, принцип «делай, что сказано, или проваливай». Тренеры, учителя, политики; Сородичи — сторонники законов или их свержения ради эффективных систем.",
+    "description_en": "Nothing worse than chaos; power serves optimization — do as told or fail. Coaches, teachers, politicians; Kindred Directors uphold laws or topple them for better systems.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда индивид или группа, которым он помог делом или советом, добивается успеха или справляется со сложной задачей.",
+    "willpower_en": "Regains Willpower whenever an individual or group he aided succeeds or masters a hard task.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "perfektsionist",
+    "name": "Перфекционист",
+    "name_en": "Perfectionist",
+    "description": "Всё должно соответствовать высшим стандартам; требует от других лишь того, что требует от себя. Оперные дивы, художники, архитекторы; Сородичи — вожаки Шабаша или ярые приверженцы Человечности.",
+    "description_en": "Everything must meet the highest standards; demands of others only what he demands of himself. Opera divas, artists, architects; Kindred — Sabbat leaders or staunch humanitarians.",
+    "willpower": "Восстанавливает пункт воли, когда добивается цели без единого изъяна, либо когда его пример вдохновляет другого на столь же успешное свершение.",
+    "willpower_en": "Regains Willpower when he hits a goal flawlessly, or when his example inspires another to equal success.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "pobeditel",
+    "name": "Победитель",
+    "name_en": "Competitor",
+    "description": "Каждая задача — вызов и состязание; везде видит шанс показать себя лучшим. Корпоративные рейдеры, спортсмены, исследователи; Сородичи добиваются стад, титулов и почёта.",
+    "description_en": "Every task is a challenge and contest; sees a chance to prove himself best everywhere. Corporate raiders, athletes, explorers; Kindred winners gain herds, titles and status.",
+    "willpower": "Восстанавливает пункт воли, когда с успехом одолевает брошенный вызов или проходит сложное испытание. Испытание должно быть масштабным, не одной проверкой; за особо сложное — больше пункта.",
+    "willpower_en": "Regains Willpower when he triumphs over a challenge or ordeal. It must be dramatic, not a single roll; an extreme ordeal may return more.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "podvizhnik",
+    "name": "Подвижник",
+    "name_en": "Celebrant",
+    "description": "Получает удовольствие от любимого дела — битвы, экстаза, книги; движим энтузиазмом, а не долгом (в отличие от фанатика). Хиппи, активисты, любители искусств; игрок указывает страсть персонажа.",
+    "description_en": "Takes joy in a beloved pursuit — battle, ecstasy, books; driven by enthusiasm, not duty (unlike the Fanatic). Hippies, activists, art lovers; the player names the passion.",
+    "willpower": "Восстанавливает пункт воли, когда отдаётся любимому делу или приобщает к нему другого. Упущенная возможность заниматься им — потеря временного пункта воли.",
+    "willpower_en": "Regains Willpower when he indulges his passion or converts another to it. A missed chance to pursue it costs temporary Willpower.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "rebenok",
+    "name": "Ребёнок",
+    "name_en": "Child",
+    "description": "Эмоционально не сформировался; предпочитает, чтобы о нём заботились. Настоящие дети, избалованные богачи; Сородичи-«дети» не понимают последствий и бывают жестоки — не обязательно обращённые детьми.",
+    "description_en": "Emotionally unformed; prefers being cared for. Real children, spoiled rich; Kindred children miss consequences and can be cruel — not necessarily Embraced as children.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда безвозмездно получает чью-нибудь помощь или поддержку.",
+    "willpower_en": "Regains Willpower whenever he freely receives someone's help or support.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "sadist",
+    "name": "Садист",
+    "name_en": "Sadist",
+    "description": "Живёт, чтобы причинять боль: убийства — слишком легко, пытки — по-настоящему. Армейские инструкторы, мстительные любовники, жестокие безумцы; может скрываться за респектабельной внешностью.",
+    "description_en": "Lives to inflict pain: murder is too easy, torture is the true craft. Drill instructors, vengeful lovers, cruel madmen; may hide behind respectability.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда причиняет кому-нибудь боль исключительно ради собственного удовольствия.",
+    "willpower_en": "Regains Willpower whenever he causes someone pain purely for his own pleasure.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "soldat",
+    "name": "Солдат",
+    "name_en": "Soldier",
+    "description": "Исполняет приказы, но не беспрекословно: самостоятелен и амбициозен в рамках иерархии, подходит к цели творчески. Мечтает стать генералом по действующей цепочке командования.",
+    "description_en": "Obeys orders but not blindly: independent and ambitious within hierarchy, creative in method. Dreams of becoming a general up the existing chain of command.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда успешно исполняет отданный приказ. Чем сложнее задача, тем полнее удовлетворение; выдающийся успех — больше пункта.",
+    "willpower_en": "Regains Willpower whenever he carries out an order. The harder the task, the deeper the satisfaction; outstanding success may return more.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "sorvigolova",
+    "name": "Сорвиголова",
+    "name_en": "Daredevil",
+    "description": "Живёт в поисках опасности и остроты ощущений; не самоубийца и не саморазрушитель. Экстремалы, мелкие преступники, эксгибиционисты; Сородичи нарушают Маскарад из озорства или плетут заговоры ради проверки — сойдёт ли с рук.",
+    "description_en": "Lives seeking danger and thrills; no suicide, no self-destruction. Extreme athletes, petty criminals, exhibitionists; Kindred breach the Masquerade for mischief.",
+    "willpower": "Восстанавливает пункт воли, когда успешно справляется с добровольно взятым рискованным заданием. Бездумный риск ради пунктов рассказчик вправе не вознаграждать.",
+    "willpower_en": "Regains Willpower when he pulls through a voluntarily taken risky undertaking. Mindless risk for points need not be rewarded.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "sotsiopat",
+    "name": "Социопат",
+    "name_en": "Sociopath",
+    "description": "Низшие существа нарушают гармонию сущего и заслуживают смерти; убийство — достойный поступок. Популистские оправдания в духе «выживает сильнейший».",
+    "description_en": "Lesser beings disturb universal harmony and deserve death; killing is a worthy deed. Populist excuses in the spirit of survival of the fittest.",
+    "willpower": "Восстанавливает пункт воли, если после крупной заварушки выясняется, что именно он внёс наибольший вклад в число убийств — включая случаи, когда убийцей был он один.",
+    "willpower_en": "Regains Willpower if after a major bloodbath it turns out he contributed most to the body count — including lone-killer cases.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "sudya",
+    "name": "Судья",
+    "name_en": "Judge",
+    "description": "Приверженец рационализма: справедливость — эффективная модель разрешения конфликтов; опирается на факты, а не визионерство. Инженеры, юристы, врачи; Сородичи — законники сообществ и голос разума котерии.",
+    "description_en": "A rationalist: justice is the efficient way to resolve conflicts; relies on facts, not visions. Engineers, lawyers, doctors; Kindred Judges enforce community law.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда решает проблему анализом доказательств или мирно улаживает разногласия.",
+    "willpower_en": "Regains Willpower whenever he solves a problem through evidence or peacefully settles a dispute.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "tvorets",
+    "name": "Творец",
+    "name_en": "Architect",
+    "description": "Движим стремлением к великой цели: счастлив, лишь создавая вечное. Изобретатели, первопроходцы, градостроители, предприниматели; Сородич пишет законы или основывает домен анархов.",
+    "description_en": "Driven toward a great goal: happy only while creating something lasting. Inventors, pioneers, city builders; a Kindred Architect writes laws or founds an anarch domain.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда создаёт что-то значимое или вечное.",
+    "willpower_en": "Regains Willpower whenever he creates something meaningful or lasting.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "traditsionalist",
+    "name": "Традиционалист",
+    "name_en": "Traditionalist",
+    "description": "Придерживается проверенных взглядов и методов: зачем чинить то, что не ломалось. Консерваторы, власть; Сородичи держатся Традиций, иные — дотрадиционных устоев.",
+    "description_en": "Keeps to proven views and methods: why fix what is not broken. Conservatives, authorities; Kindred uphold the Traditions, some pre-Camarilla ways.",
+    "willpower": "Восстанавливает пункт воли, когда доказывает, что старые пути лучше новых, либо его консервативная позиция оказывается лучшим решением.",
+    "willpower_en": "Regains Willpower when he proves the old ways better, or his conservative stance turns out to be the best solution.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "trikster",
+    "name": "Трикстер",
+    "name_en": "Trickster",
+    "description": "Во всём видит абсурд и повод для смеха; подбадривает окружающих, высмеивает догматы. Комики, сатирики, социокритики; Сородичи — советники Принцев или обличители Традиций.",
+    "description_en": "Sees absurdity and laughter in everything; cheers others up, mocks dogmas. Comedians, satirists, social critics; Kindred Tricksters advise Princes or denounce Traditions.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда подбадривает окружающих, особенно облегчив и собственную боль.",
+    "willpower_en": "Regains Willpower whenever he cheers those around him, especially easing his own pain in the process.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "fanatik",
+    "name": "Фанатик",
+    "name_en": "Fanatic",
+    "description": "Цель, на алтарь которой возложена жизнь; цель оправдывает средства, вне цели — чувство вины. Революционеры, фундаменталисты, провокаторы; игрок называет цель.",
+    "description_en": "A goal upon whose altar life itself is laid; the end justifies the means, straying breeds guilt. Revolutionaries, fundamentalists, provocateurs; the player names the goal.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда выполняет задание, имеющее прямое отношение к избранной высшей цели.",
+    "willpower_en": "Regains Willpower whenever he completes a task directly serving his chosen higher goal.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "frik",
+    "name": "Фрик",
+    "name_en": "Freak",
+    "description": "Шокирует и эпатирует, чтобы выделиться и манипулировать; казаться Дьяволом его устраивает. Шок-рокеры, мятежные подростки, цирковые уроды.",
+    "description_en": "Shocks and outrages to stand out and manipulate; being seen as the Devil suits him. Shock rockers, rebellious teens, circus freaks.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда своими действиями вызывает страх или отвращение.",
+    "willpower_en": "Regains Willpower whenever his actions provoke fear or revulsion.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "khameleon",
+    "name": "Хамелеон",
+    "name_en": "Chameleon",
+    "description": "Изучает нравы окружающих и выдаёт себя за своего в любой прослойке — так, что и сир не узнает. Шпионы, аферисты, самозванцы.",
+    "description_en": "Studies others' ways and passes as one of any milieu — so well even his sire may not know him. Spies, con artists, impostors.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда выдаёт себя за другого и тем добивается пользы для себя или стаи/котерии.",
+    "willpower_en": "Regains Willpower whenever he passes as another and thereby gains something for himself or his pack/coterie.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "chudovishche",
+    "name": "Чудовище",
+    "name_en": "Monster",
+    "description": "Знает, что чудовище, и ведёт себя соответственно — но творит зло ради познания собственной сути, а не удовольствия. Социопаты, травмированные; чаще Шабаш. Игрок указывает значимое злодеяние; рассказчик строг к вознаграждению.",
+    "description_en": "Knows he is a monster and acts accordingly — but commits evil to fathom his own nature, not for pleasure. Sociopaths, the traumatized; often Sabbat. The player names a signature atrocity; the Storyteller is strict.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда совершает избранное значимое злодеяние.",
+    "willpower_en": "Regains Willpower whenever he commits his chosen signature atrocity.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "egotsentrist",
+    "name": "Эгоцентрист",
+    "name_en": "Rogue",
+    "description": "Имеет значение только он сам; самодостаточен, блюдёт свои интересы — не обязательно преступник. Сутенёры, капиталисты, мошенники; Сородичи — диаблеристы, автархи, клановые Примогены.",
+    "description_en": "Only he matters; self-sufficient, guards his own interests — not necessarily a criminal. Pimps, capitalists, swindlers; Kindred Rogues are diablerists, autarkis, clan Primogen.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда получает моральную или материальную выгоду благодаря эгоистичному поведению.",
+    "willpower_en": "Regains Willpower whenever selfish behavior brings him moral or material gain.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "aktivist",
+    "name": "Активист",
+    "name_en": "Activist",
+    "description": "Не мирится со сломанным миром: чинит его собственными руками и даёт отпор тем, кто стоит у руля. Правозащитники, разоблачители, уличные организаторы; среди магов — те, кто считает молчание соучастием.",
+    "description_en": "Refuses to accept a broken world: mends it with his own hands and pushes back against those in charge. Rights defenders, whistleblowers, street organizers; among mages — those who see silence as complicity.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда даёт отпор несправедливости или раскрывает заговор власть имущих.",
+    "willpower_en": "Regains a Willpower point whenever he pushes back against injustice or exposes a conspiracy of the powerful.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "bezumnyy_uchenyy",
+    "name": "Безумный учёный",
+    "name_en": "Mad Scientist",
+    "description": "Раздвигает границы дозволенного знания, не спрашивая разрешения ни у коллег, ни у морали. Лабораторные затворники, непризнанные гении, экспериментаторы над собственным телом; табу для него — лишь недосмотр предшественников.",
+    "description_en": "Pushes the frontiers of permitted knowledge, asking leave of neither colleagues nor morals. Reclusive experimenters, unrecognized geniuses, self-experimenters; taboos are merely oversights of predecessors.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда добивается научного результата без Парадокса, нарушив при этом правила собственной фракции.",
+    "willpower_en": "Regains a Willpower point whenever he achieves a scientific result without Paradox while breaking the rules of his own faction.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "malets",
+    "name": "Малец",
+    "name_en": "Child",
+    "description": "Сохранил детскую непосредственность: удивляется миру и верит, что доброта заразительна. Наивные мечтатели, большие дети во взрослых телах; цинизм окружающих его не берёт.",
+    "description_en": "Keeps a childlike directness: marvels at the world and believes kindness is contagious. Naive dreamers, grown-ups with a child's heart; the cynicism around him does not stick.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда его непосредственность вдохновляет равнодушных на заботу о других.",
+    "willpower_en": "Regains a Willpower point whenever his guilelessness moves the indifferent to care for others.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "metsenat",
+    "name": "Меценат",
+    "name_en": "Patron",
+    "description": "Помогает нуждающимся не ради славы, а потому что может: деньгами, связями, кровом. Благотворители, покровители искусств, тихие спонсоры чужих начинаний.",
+    "description_en": "Helps those in need not for glory but because he can: with money, connections, shelter. Benefactors, patrons of the arts, quiet sponsors of others' ventures.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда его помощь приходит к остро нуждающемуся вовремя.",
+    "willpower_en": "Regains a Willpower point whenever his aid reaches someone in dire need in time.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "monstr",
+    "name": "Монстр",
+    "name_en": "Monster",
+    "description": "Отрицает в себе всё человеческое: бессердечность и разрушение — его естественная среда. Типично для Нефанди и падших; сострадание считает слабостью, достойной презрения.",
+    "description_en": "Denies everything human in himself: heartlessness and destruction are his element. Typical of Nephandi and the fallen; regards compassion as contemptible weakness.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда совершает бессердечный поступок, подтверждающий его природу.",
+    "willpower_en": "Regains a Willpower point whenever he commits a heartless deed that affirms his nature.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "novator",
+    "name": "Новатор",
+    "name_en": "Innovator",
+    "description": "Живёт вдохновением и прорывами: застой для него страшнее провала. Изобретатели, реформаторы практик, авторы новых парадигм; вчерашнее открытие уже скучно.",
+    "description_en": "Lives on inspiration and breakthroughs: stagnation frightens him more than failure. Inventors, reformers of practice, authors of new paradigms; yesterday's discovery is already boring.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда совершает новый значимый прорыв в своём деле.",
+    "willpower_en": "Regains a Willpower point whenever he makes a new significant breakthrough in his pursuit.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "pravdoiskatel",
+    "name": "Правдоискатель",
+    "name_en": "Truth-Seeker",
+    "description": "Служит высшей цели, а не себе: его поступки — взнос в дело большее, чем он сам. Служители идеалов, верные оруженосцы великих замыслов; личная выгода его не мотивирует.",
+    "description_en": "Serves a higher goal, not himself: his deeds are contributions to a cause greater than he is. Servants of ideals, faithful squires of great designs; personal gain does not move him.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда совершает значимое деяние во имя своей высшей цели.",
+    "willpower_en": "Regains a Willpower point whenever he performs a significant deed in the name of his higher goal.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "prorok",
+    "name": "Пророк",
+    "name_en": "Prophet",
+    "description": "Несёт Истину тем, кто у власти, не считаясь с ценой: молчать о виденном он не умеет. Глашатаи неудобных откровений, обличители сильных мира сего.",
+    "description_en": "Carries Truth to those in power regardless of the cost: he cannot stay silent about what he has seen. Heralds of unwelcome revelations, denouncers of the mighty.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда говорит Истину власти в лицо и его слова вдохновляют слушателей.",
+    "willpower_en": "Regains a Willpower point whenever he speaks Truth to power and his words inspire the listeners.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "protivoborets",
+    "name": "Противоборец",
+    "name_en": "Contrarian",
+    "description": "Обманывает ожидания нарочно: поступает наперекор тому, что от него ждут. Спорщики ради спора, разрушители шаблонов; согласие окружающих кажется ему подозрительным.",
+    "description_en": "Defies expectations on purpose: acts contrary to what is expected of him. Arguers for argument's sake, breakers of patterns; others' agreement strikes him as suspicious.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда его наперекор-поступок заставляет людей осознать собственную неправоту.",
+    "willpower_en": "Regains a Willpower point whenever his contrary act makes people realize they were wrong.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "sladostrastnik",
+    "name": "Сладострастник",
+    "name_en": "Sensualist",
+    "description": "Гонится за новыми сильными ощущениями: вкус, страсть, риск — всё, что будоражит чувства. Гедонисты-путешественники, коллекционеры впечатлений; пресыщение лишь раззадоривает.",
+    "description_en": "Chases new intense sensations: taste, passion, risk — anything that stirs the senses. Hedonist wanderers, collectors of impressions; satiety only whets the appetite.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда разделяет наслаждение с другим и тот отвечает взаимностью.",
+    "willpower_en": "Regains a Willpower point whenever he shares pleasure with another and it is reciprocated.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "khaker",
+    "name": "Хакер",
+    "name_en": "Hacker",
+    "description": "Видит любую систему насквозь и первым находит в ней изъян: код, бюрократию, чужую парадигму. Взломщики, аудиторы, испытатели чужих крепостей; закрытая дверь для него — приглашение.",
+    "description_en": "Sees through any system and finds its flaw first: code, bureaucracy, another's paradigm. Breakers-in, auditors, testers of others' strongholds; a locked door is an invitation.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда находит скрытое несовершенство системы или предлагает её улучшение.",
+    "willpower_en": "Regains a Willpower point whenever he uncovers a hidden flaw in a system or proposes its improvement.",
+    "category": "archetypes"
+  },
+  {
+    "slug": "chelovek_mashina",
+    "name": "Человек-машина",
+    "name_en": "Cyborg",
+    "description": "Преодолевает пределы плоти железом и волей: тело — лишь первая версия. Киборги, адепты Улучшения, трансгуманисты; слабость плоти считает багом, а не данностью.",
+    "description_en": "Transcends the limits of flesh with steel and will: the body is only version one. Cyborgs, adepts of Improvement, transhumanists; treat the weakness of flesh as a bug, not a given.",
+    "willpower": "Восстанавливает пункт воли каждый раз, когда совершает то, что недоступно обычной плоти.",
+    "willpower_en": "Regains a Willpower point whenever he accomplishes what ordinary flesh cannot.",
+    "category": "archetypes"
+  }
+]

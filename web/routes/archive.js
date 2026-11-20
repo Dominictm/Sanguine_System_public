@@ -1,0 +1,381 @@
+'use strict';
+// Роутер архива города: timeline, карта фракций, визитёры, слухи (d20).
+// Сырые markdown-документы cities/<city>/archive/*, рендерятся на клиенте.
+// Вынесено из server.js (E1.2).
+
+const express = require('express');
+const path    = require('path');
+const fs      = require('fs').promises;
+const { serverError } = require('../lib/http');
+const { archiveDir, reqCity, writeFileAtomic, getAllCharacters, getAllLocations } = require('../lib/db');
+const influence = require('../lib/influence');
+const {
+  parseTimelineMd, addTimelineEpoch, removeTimelineEpoch,
+  addTimelineRow, updateTimelineRow, removeTimelineRow,
+  parseWorldStateBlock, replaceWorldStateBlock, setWorldStateLastUpdate,
+  addWorldStateSection, removeWorldStateSection, setWorldStateSectionNote,
+  addWorldStateRow, updateWorldStateRow, removeWorldStateRow,
+  sanitizeInlineText,
+} = require('../lib/parsers');
+
+const router = express.Router();
+
+// Резолвит {kind, slug} → относительная markdown-ссылка от archive/timeline.md
+// (персонажи: ../characters/<lineageFolder>/<slug>/<slug>.md; локации:
+// ../locations/<dirRelPath>/<slug>.md, где dirRelPath уже содержит district_NN/<район>).
+async function _resolveTimelineLink(city, l) {
+  const { kind, slug } = l || {};
+  if (kind === 'character') {
+    const chars = await getAllCharacters(city);
+    const c = chars.find(x => x.slug === slug);
+    if (!c) return null;
+    return { text: c.name, href: `../characters/${c.lineageFolder}/${c.slug}/${c.slug}.md` };
+  }
+  if (kind === 'location') {
+    const locs = await getAllLocations(city);
+    const loc = locs.find(x => x.slug === slug);
+    if (!loc) return null;
+    return { text: loc.name, href: `../locations/${loc.dirRelPath}/${loc.slug}.md` };
+  }
+  // Готовая ссылка ({text, href} без kind) — модуль/хроника/журнал или связи
+  // существующей строки, которые парсер отдаёт без kind/slug. Пропускаем как есть.
+  if (l && l.text && l.href) return { text: String(l.text), href: String(l.href) };
+  return null;
+}
+async function _resolveTimelineLinks(city, links) {
+  const out = [];
+  for (const l of (links || [])) {
+    const r = await _resolveTimelineLink(city, l);
+    if (r) out.push(r);
+  }
+  return out;
+}
+
+// Raw markdown archive docs — rendered client-side with the lore renderer.
+const archiveDoc = file => async (req, res) => {
+  try {
+    const content = await fs.readFile(path.join(archiveDir(reqCity(req)), file), 'utf-8').catch(() => null);
+    res.json({ exists: content !== null, content: content || '' });
+  } catch (e) { serverError(res, e); }
+};
+router.get('/api/timeline', archiveDoc('timeline.md'));          // historical lore (B3)
+router.get('/api/factions', archiveDoc('political_state.md'));   // C1 — faction map
+router.get('/api/visitors', archiveDoc('visitors.md'));          // C3 — cross-city guests
+
+// ── Диаграммы влияния по локациям (спека influence-charts-2026-11-16) ─────────
+// Четыре блока считаются из «Контроля», «Фракций», «Присутствия» и «Маскарада» локаций;
+// ручные числа Рассказчика лежат отдельно (archive/influence.json) и перекрывают
+// расчёт построчно. Старая панель «Баланс сил» (GET/PUT/DELETE /api/factions/influence
+// и синк с секцией «Фракции» city.md) удалена — FR12.
+router.get('/api/influence', async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const district = String(req.query.district || '').trim();
+    const [locs, dict, overrides] = await Promise.all([
+      getAllLocations(city), influence.loadDictionary(city), influence.readOverrides(city),
+    ]);
+    if (district) {
+      // ?district=<слаг папки района> — семь разделов вкладки «Фракции» карточки района.
+      // Привязка локации к району — по папке (первый сегмент dirRelPath), как на вкладке «Районы».
+      const own = locs.filter(l => String(l.dirRelPath || '').split('/')[0] === district);
+      return res.json(influence.computeDistrictInfluence(own, dict));
+    }
+    res.json(influence.computeInfluence(locs, dict, overrides));
+  } catch (e) { serverError(res, e); }
+});
+
+router.put('/api/influence/override', express.json(), async (req, res) => {
+  try {
+    const city  = reqCity(req);
+    const block = String(req.body?.block || '');
+    const key   = sanitizeInlineText(req.body?.key).slice(0, 200);
+    const value = req.body?.value;
+    if (!influence.OVERRIDE_BLOCKS.includes(block))
+      return res.status(400).json({ error: 'Блок не правится вручную: ожидается factions, clans или lineages' });
+    if (!key || key === '__proto__' || key === 'constructor' || key === 'prototype')
+      return res.status(400).json({ error: 'Укажи строку диаграммы' });
+    if (value !== null && !(Number.isInteger(value) && value >= 0 && value <= 100))
+      return res.status(400).json({ error: 'Влияние: целое число 0-100 или null' });
+    await influence.writeOverride(city, block, key, value);
+    res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// ── Хронология мира — структурированное редактирование (эпохи/строки) ────────
+router.get('/api/timeline/structured', async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const raw = await fs.readFile(path.join(archiveDir(city), 'timeline.md'), 'utf-8').catch(() => '');
+    res.json(parseTimelineMd(raw));
+  } catch (e) { serverError(res, e); }
+});
+
+router.post('/api/timeline/epoch', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    // sanitizeInlineText: a '\n## '-starting line in the heading would otherwise
+    // fabricate a second, bogus epoch section on the next parse (FIX-2,
+    // doc/audit/2026-07-28-fix-plan.md).
+    const heading = sanitizeInlineText(req.body?.heading);
+    if (!heading) return res.status(400).json({ error: 'Укажи название эпохи' });
+    const file = path.join(archiveDir(city), 'timeline.md');
+    const raw = await fs.readFile(file, 'utf-8').catch(() => '');
+    const { raw: updated, duplicate } = addTimelineEpoch(raw, heading);
+    if (duplicate) return res.status(409).json({ error: `Эпоха «${heading}» уже существует` });
+    await fs.mkdir(archiveDir(city), { recursive: true });
+    await writeFileAtomic(file, updated, 'utf-8');
+    res.json({ ok: true, ...parseTimelineMd(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.delete('/api/timeline/epoch/:heading', async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    const file = path.join(archiveDir(city), 'timeline.md');
+    const raw = await fs.readFile(file, 'utf-8').catch(() => '');
+    const { raw: updated, found } = removeTimelineEpoch(raw, heading);
+    if (!found) return res.status(404).json({ error: `Эпоха «${heading}» не найдена` });
+    await writeFileAtomic(file, updated, 'utf-8');
+    res.json({ ok: true, ...parseTimelineMd(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.post('/api/timeline/epoch/:heading/row', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    const { year, type, event, source, links } = req.body || {};
+    if (!String(event || '').trim()) return res.status(400).json({ error: 'Укажи текст события' });
+    const resolvedLinks = await _resolveTimelineLinks(city, links);
+    const file = path.join(archiveDir(city), 'timeline.md');
+    const raw = await fs.readFile(file, 'utf-8').catch(() => '');
+    const { raw: updated, found } = addTimelineRow(raw, heading,
+      { year: year || '', type: type || '', event: event.trim(), source: source || '', links: resolvedLinks });
+    if (!found) return res.status(404).json({ error: `Эпоха «${heading}» не найдена` });
+    await writeFileAtomic(file, updated, 'utf-8');
+    res.json({ ok: true, ...parseTimelineMd(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.put('/api/timeline/epoch/:heading/row/:index', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    const index = Number(req.params.index);
+    const { year, type, event, source, links } = req.body || {};
+    if (!String(event || '').trim()) return res.status(400).json({ error: 'Укажи текст события' });
+    const resolvedLinks = await _resolveTimelineLinks(city, links);
+    const file = path.join(archiveDir(city), 'timeline.md');
+    const raw = await fs.readFile(file, 'utf-8').catch(() => '');
+    const { raw: updated, found, indexValid } = updateTimelineRow(raw, heading, index,
+      { year: year || '', type: type || '', event: event.trim(), source: source || '', links: resolvedLinks });
+    if (!found) return res.status(404).json({ error: `Эпоха «${heading}» не найдена` });
+    if (!indexValid) return res.status(409).json({ error: 'Данные изменились, обновите страницу' });
+    await writeFileAtomic(file, updated, 'utf-8');
+    res.json({ ok: true, ...parseTimelineMd(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.delete('/api/timeline/epoch/:heading/row/:index', async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    const index = Number(req.params.index);
+    const file = path.join(archiveDir(city), 'timeline.md');
+    const raw = await fs.readFile(file, 'utf-8').catch(() => '');
+    const { raw: updated, found, indexValid } = removeTimelineRow(raw, heading, index);
+    if (!found) return res.status(404).json({ error: `Эпоха «${heading}» не найдена` });
+    if (!indexValid) return res.status(409).json({ error: 'Данные изменились, обновите страницу' });
+    await writeFileAtomic(file, updated, 'utf-8');
+    res.json({ ok: true, ...parseTimelineMd(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+// ── Состояние мира — структурированное редактирование блока в events.md ──────
+// events.md живёт в archiveDir, не в chroniclesDir — тот же путь, что
+// findChronicleFile в routes/chronicles.js.
+const _eventsFile = city => path.join(archiveDir(city), 'events.md');
+
+router.get('/api/world-state/structured', async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.json({ lastUpdate: null, sections: [] });
+    res.json(parseWorldStateBlock(raw) || { lastUpdate: null, sections: [] });
+  } catch (e) { serverError(res, e); }
+});
+
+router.put('/api/world-state/last-update', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const text = String(req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'Укажи текст' });
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'events.md не найден' });
+    const { raw: updated, found } = setWorldStateLastUpdate(raw, text);
+    if (!found) return res.status(404).json({ error: 'Блок «Состояние мира» не найден' });
+    await writeFileAtomic(_eventsFile(city), updated, 'utf-8');
+    res.json({ ok: true, ...parseWorldStateBlock(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.post('/api/world-state/section', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    // sanitizeInlineText: a '\n### '-starting line in the heading would otherwise
+    // fabricate a second, bogus section on the next parse (FIX-2,
+    // doc/audit/2026-07-28-fix-plan.md).
+    const heading = sanitizeInlineText(req.body?.heading);
+    const columns = Array.isArray(req.body?.columns) ? req.body.columns.map(c => String(c).trim()).filter(Boolean) : [];
+    if (!heading) return res.status(400).json({ error: 'Укажи заголовок секции' });
+    if (!columns.length) return res.status(400).json({ error: 'Укажи хотя бы одну колонку' });
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'events.md не найден' });
+    const { raw: updated, found } = addWorldStateSection(raw, heading, columns);
+    if (!found) return res.status(404).json({ error: 'Блок «Состояние мира» не найден' });
+    await writeFileAtomic(_eventsFile(city), updated, 'utf-8');
+    res.json({ ok: true, ...parseWorldStateBlock(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.delete('/api/world-state/section/:heading', async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'events.md не найден' });
+    const { raw: updated, found } = removeWorldStateSection(raw, heading);
+    if (!found) return res.status(404).json({ error: `Секция «${heading}» не найдена` });
+    await writeFileAtomic(_eventsFile(city), updated, 'utf-8');
+    res.json({ ok: true, ...parseWorldStateBlock(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.put('/api/world-state/section/:heading/note', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    // sanitizeInlineText: _extractNote() already collapses a section's note to a
+    // single line on read (joins non-table lines with a space) — collapsing here
+    // too means a '\n### fake heading' can never reach the file as a real line
+    // start, closing the same fabricated-section risk as the heading fields above
+    // (FIX-2, doc/audit/2026-07-28-fix-plan.md) without needing an escape/unescape pair.
+    const text = sanitizeInlineText(req.body?.text);
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'events.md не найден' });
+    const { raw: updated, found } = setWorldStateSectionNote(raw, heading, text);
+    if (!found) return res.status(404).json({ error: `Секция «${heading}» не найдена` });
+    await writeFileAtomic(_eventsFile(city), updated, 'utf-8');
+    res.json({ ok: true, ...parseWorldStateBlock(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.post('/api/world-state/section/:heading/row', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    const cells = Array.isArray(req.body?.cells) ? req.body.cells.map(c => String(c || '')) : [];
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'events.md не найден' });
+    const { raw: updated, found } = addWorldStateRow(raw, heading, cells);
+    if (!found) return res.status(404).json({ error: `Секция «${heading}» не найдена` });
+    await writeFileAtomic(_eventsFile(city), updated, 'utf-8');
+    res.json({ ok: true, ...parseWorldStateBlock(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.put('/api/world-state/section/:heading/row/:index', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    const index = Number(req.params.index);
+    const cells = Array.isArray(req.body?.cells) ? req.body.cells.map(c => String(c || '')) : [];
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'events.md не найден' });
+    const { raw: updated, found, indexValid } = updateWorldStateRow(raw, heading, index, cells);
+    if (!found) return res.status(404).json({ error: `Секция «${heading}» не найдена` });
+    if (!indexValid) return res.status(409).json({ error: 'Данные изменились, обновите страницу' });
+    await writeFileAtomic(_eventsFile(city), updated, 'utf-8');
+    res.json({ ok: true, ...parseWorldStateBlock(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.delete('/api/world-state/section/:heading/row/:index', async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const heading = decodeURIComponent(req.params.heading);
+    const index = Number(req.params.index);
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'events.md не найден' });
+    const { raw: updated, found, indexValid } = removeWorldStateRow(raw, heading, index);
+    if (!found) return res.status(404).json({ error: `Секция «${heading}» не найдена` });
+    if (!indexValid) return res.status(409).json({ error: 'Данные изменились, обновите страницу' });
+    await writeFileAtomic(_eventsFile(city), updated, 'utf-8');
+    res.json({ ok: true, ...parseWorldStateBlock(updated) });
+  } catch (e) { serverError(res, e); }
+});
+
+router.get('/api/world-state/raw', async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.json({ exists: false, content: '' });
+    const m = raw.match(/##\s*🌍[^\n]*\n([\s\S]*?)(?=\n##\s)/);
+    res.json({ exists: !!m, content: m ? m[1] : '' });
+  } catch (e) { serverError(res, e); }
+});
+
+router.put('/api/world-state/raw', express.json(), async (req, res) => {
+  try {
+    const city = reqCity(req);
+    const content = req.body?.content;
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+    const raw = await fs.readFile(_eventsFile(city), 'utf-8').catch(() => null);
+    if (raw === null) return res.status(404).json({ error: 'events.md не найден' });
+    const { raw: updated, found } = replaceWorldStateBlock(raw, content);
+    if (!found) return res.status(404).json({ error: 'Блок «Состояние мира» не найден' });
+    await writeFileAtomic(_eventsFile(city), updated, 'utf-8');
+    res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+// C2 — rumor tables (Elysium d20 / Dreaming d20)
+router.get('/api/rumors', async (req, res) => {
+  try {
+    const which = req.query.type === 'dreaming' ? 'rumors_dreaming.md' : 'rumors_elysium.md';
+    const content = await fs.readFile(path.join(archiveDir(reqCity(req)), which), 'utf-8').catch(() => null);
+    res.json({ exists: content !== null, content: content || '', type: req.query.type === 'dreaming' ? 'dreaming' : 'elysium' });
+  } catch (e) { serverError(res, e); }
+});
+
+// PUT — write archive docs back to disk
+const _writeArchiveDoc = (file) => async (req, res) => {
+  try {
+    const city    = reqCity(req);
+    const content = req.body?.content;
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+    const dir = archiveDir(city);
+    await fs.mkdir(dir, { recursive: true });
+    await writeFileAtomic(path.join(dir, file), content, 'utf-8');
+    res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+};
+router.put('/api/timeline', express.json(), _writeArchiveDoc('timeline.md'));
+router.put('/api/factions', express.json(), _writeArchiveDoc('political_state.md'));
+router.put('/api/visitors', express.json(), _writeArchiveDoc('visitors.md'));
+router.put('/api/rumors', express.json(), async (req, res) => {
+  try {
+    const city    = reqCity(req);
+    const type    = req.body?.type === 'dreaming' ? 'dreaming' : 'elysium';
+    const content = req.body?.content;
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content required' });
+    const file = type === 'dreaming' ? 'rumors_dreaming.md' : 'rumors_elysium.md';
+    const dir  = archiveDir(city);
+    await fs.mkdir(dir, { recursive: true });
+    await writeFileAtomic(path.join(dir, file), content, 'utf-8');
+    res.json({ ok: true });
+  } catch (e) { serverError(res, e); }
+});
+
+module.exports = { router };
